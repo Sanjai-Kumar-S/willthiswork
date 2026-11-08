@@ -3,7 +3,7 @@
 -- Authorized Operator: BLACKGOKU_0707
 
 local Config = {
-    AuthorizedUser = "Aid3no",
+    AuthorizedUser = "BLACKGOKU_0707",
     WebhookUrl = "https://discord.com/api/webhooks/1568890822420734094/CmM8-p7faQFs-rMwPhRqfMSlEG7-mV87NU3IEe-w3ZodJpaDRS2vrv0Befqxg6PB7DIY",
     TravelSpeed = 350,
     WaypointSpeed = 250
