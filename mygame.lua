@@ -1,4 +1,4 @@
--- Blox Fruits Auto-Sit Script (Tweening Movement & Immediate Jump on Opponent)
+-- Blox Fruits Auto-Sit Script (Physical Proximity & Opponent Detection Fix)
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
@@ -11,11 +11,9 @@ local function IsTradeTableSeat(seat)
     return parent and parent.Name == "TradeTable" and (seat.Name == "P1" or seat.Name == "P2")
 end
 
--- Function to tween character smoothly to a seat without getting flagged or kicked
+-- Smooth tween movement to prevent anti-cheat kicks
 local function TweenToSeat(hrp, targetCFrame)
     local distance = (hrp.Position - targetCFrame.Position).Magnitude
-    -- Adjust speed here: lower speed value = slower/safer tween. 
-    -- 150 studs per second ensures smooth movement without anti-cheat kicks.
     local speed = 150 
     local duration = math.clamp(distance / speed, 0.2, 1.5)
     
@@ -23,6 +21,30 @@ local function TweenToSeat(hrp, targetCFrame)
     local tween = TweenService:Create(hrp, tweenInfo, { CFrame = targetCFrame })
     tween:Play()
     tween.Completed:Wait()
+end
+
+-- Checks if any other player's character parts are physically located at the target opposite seat position
+local function IsOppositeSeatOccupied(oppositeSeat)
+    local overlapParams = OverlapParams.new()
+    overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+    overlapParams.RespectCanCollide = false
+
+    -- Create a small virtual bounding box right above the opposite chair to detect any player model
+    local regionCenter = oppositeSeat.Position + Vector3.new(0, 2, 0)
+    local regionSize = Vector3.new(3, 4, 3)
+    
+    local partsInRegion = Workspace:GetPartsInPart(oppositeSeat, overlapParams)
+    for _, part in ipairs(partsInRegion) do
+        local character = part.Parent
+        if character and character:FindFirstChildOfClass("Humanoid") then
+            local player = Players:GetPlayerFromCharacter(character)
+            if player and player ~= LocalPlayer then
+                return true
+            end
+        end
+    end
+    
+    return false
 end
 
 task.spawn(function()
@@ -48,11 +70,12 @@ task.spawn(function()
                     continue
                 end
 
-                -- 2. Jump immediately if anyone sits in the opposite chair to trade
+                -- 2. Check the opposite chair using physical proximity detection
                 local tableModel = currentSeat.Parent
                 for _, child in ipairs(tableModel:GetChildren()) do
                     if child:IsA("Seat") and child ~= currentSeat then
-                        if child.Occupant then
+                        if IsOppositeSeatOccupied(child) then
+                            print("[DEBUG] Opponent detected at opposite seat! Jumping out...")
                             humanoid.Jump = true
                             task.wait(0.5)
                             break
@@ -67,7 +90,7 @@ task.spawn(function()
 
             for _, obj in pairs(Workspace:GetDescendants()) do
                 if obj:IsA("Seat") and IsTradeTableSeat(obj) then
-                    if obj.Parent ~= lastTable and not obj.Occupant then
+                    if obj.Parent ~= lastTable and not IsOppositeSeatOccupied(obj) then
                         local dist = (hrp.Position - obj.Position).Magnitude
                         if dist < 800 and dist < shortestDist then
                             shortestDist = dist
@@ -82,7 +105,6 @@ task.spawn(function()
             end
 
             if bestSeat then
-                -- Smoothly tween to the seat position instead of instant teleporting
                 local targetCF = bestSeat.CFrame + Vector3.new(0, 3, 0)
                 TweenToSeat(hrp, targetCF)
                 task.wait(0.2)
