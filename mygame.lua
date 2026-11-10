@@ -60,13 +60,13 @@ GUI.DisplayOrder = 999
 GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 GUI.Parent = PlayerGui
 
--- FULL SCREEN OVERLAY (Darker Background Transparency)
+-- FULL SCREEN OVERLAY (Darker Background Transparency set to 0.85 for 1.75-style dark level)
 local Overlay = Instance.new("TextButton")
 Overlay.Name = "Overlay"
 Overlay.Size = UDim2.fromScale(1, 1)
 Overlay.Position = UDim2.fromScale(0, 0)
 Overlay.BackgroundColor3 = Color3.new(0, 0, 0)
-Overlay.BackgroundTransparency = 0.75
+Overlay.BackgroundTransparency = 0.85
 Overlay.BorderSizePixel = 0
 Overlay.Text = ""
 Overlay.AutoButtonColor = false
@@ -156,21 +156,19 @@ InputBox.Parent = Main
 Instance.new("UICorner", InputBox).CornerRadius = UDim.new(0, 8)
 
 -- VERIFY BUTTON
-local Status = Instance.new("TextButton")
-Status.Size = UDim2.new(1, -40, 0, 40)
-Status.Position = UDim2.fromOffset(20, 190)
-Status.BackgroundColor3 = Color3.new(1, 1, 1)
-Status.BorderSizePixel = 0
-Status.Text = "Verify Key"
-Status.TextColor3 = Color3.fromRGB(24, 24, 28)
-Status.Font = Enum.Font.GothamBold
-Status.TextSize = 14
-Status.Active = false
-Status.AutoButtonColor = false
-Status.ZIndex = 7
-Status.Parent = Main
+local VerifyBtn = Instance.new("TextButton")
+VerifyBtn.Size = UDim2.new(1, -40, 0, 40)
+VerifyBtn.Position = UDim2.fromOffset(20, 190)
+VerifyBtn.BackgroundColor3 = Color3.new(1, 1, 1)
+VerifyBtn.BorderSizePixel = 0
+VerifyBtn.Text = "Verify Key"
+VerifyBtn.TextColor3 = Color3.fromRGB(24, 24, 28)
+VerifyBtn.Font = Enum.Font.GothamBold
+VerifyBtn.TextSize = 14
+VerifyBtn.ZIndex = 7
+VerifyBtn.Parent = Main
 
-Instance.new("UICorner", Status).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", VerifyBtn).CornerRadius = UDim.new(0, 8)
 
 -- COPY LINK
 GetKey.Activated:Connect(function()
@@ -189,6 +187,27 @@ GetKey.Activated:Connect(function()
             GetKey.Text = "Get Key (Copy Link)"
         end
     end)
+end)
+
+-- VERIFY LOGIC (Rejects everything typed and says "Wrong Key")
+local isVerifying = false
+VerifyBtn.Activated:Connect(function()
+    if isVerifying then return end
+    isVerifying = true
+
+    VerifyBtn.Text = "Checking..."
+    task.wait(1)
+
+    VerifyBtn.Text = "Wrong Key"
+    VerifyBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 50) -- Turns red for error feedback
+    VerifyBtn.TextColor3 = Color3.new(1, 1, 1)
+
+    task.wait(2)
+
+    VerifyBtn.Text = "Verify Key"
+    VerifyBtn.BackgroundColor3 = Color3.new(1, 1, 1)
+    VerifyBtn.TextColor3 = Color3.fromRGB(24, 24, 28)
+    isVerifying = false
 end)
 
 -- BLOCK STANDARD GAMEPLAY INPUT
@@ -229,7 +248,7 @@ RunService:BindToRenderStep(
 )
 
 print("Noob Key System Loaded")
-print("Verification: Disabled")
+print("Verification: Active (Rejecting All)")
 print("Camera: Fixed")
 print("Standard Controls: Disabled")
 print("GUI: Persistent")
