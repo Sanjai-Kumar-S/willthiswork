@@ -1,30 +1,44 @@
 
+--==================================================
 -- NOOB KEY SYSTEM
--- Roblox Studio / LocalScript
+-- Persistent GUI + Fixed Camera + Control Lock
+-- Roblox Luau / LocalScript
 -- Place inside StarterPlayerScripts
+--==================================================
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
-local StarterGui = game:GetService("StarterGui")
+local ContextActionService = game:GetService("ContextActionService")
 
 local Player = Players.LocalPlayer
 local PlayerGui = Player:WaitForChild("PlayerGui")
 
+-- CONFIGURATION
 local KEY_LINK = "https://links-unlockr-gg.netlify.app/s?mOAtSVcp&data=qe4RQAE6kyWMDfsjlKZWN3TkZONzvfTcLlN3/OSuPE/3SxUitgWiEjzaDS1pz6md8uM02jv/pdxgS5O6qQU/DsVcWkZpzEOS8wfKXV5Z3SWdyYdyfQgQQ9LwLYy%2BBA8TNtO31PgWZ6XzFjY2F0t%2Bz3qMsfdzBlE1/IemBlQSQise4mc32YMo60W0jvD4aWRKJwh9kQ2t%2Buw286brYsvBHsXP3ldlfpIlehG3gGf0Q05gkNac%2BvDLdqzULY11HNPktVzAxovbA2EZK%2BvXBYte2Q%3D%3D"
 
--- CLEAN OLD GUI
-local old = PlayerGui:FindFirstChild("NoobKeySystem")
-if old then old:Destroy() end
+local GUI_NAME = "NoobKeySystem"
+local BLUR_SIZE = 12
+
+-- CLEAN OLD INSTANCE
+RunService:UnbindFromRenderStep("NoobFixedCamera")
+ContextActionService:UnbindAction("NoobInputLock")
+
+local OldGUI = PlayerGui:FindFirstChild(GUI_NAME)
+if OldGUI then OldGUI:Destroy() end
+
+local OldBlur = Lighting:FindFirstChild("NoobKeyBlur")
+if OldBlur then OldBlur:Destroy() end
 
 -- DISABLE STANDARD PLAYER CONTROLS
 local PlayerModule = require(
     Player.PlayerScripts:WaitForChild("PlayerModule")
 )
+
 local Controls = PlayerModule:GetControls()
 Controls:Disable()
 
--- SAVE CAMERA POSITION
+-- SAVE CAMERA
 local Camera = workspace.CurrentCamera
 local FixedCFrame = Camera.CFrame
 local FixedFocus = Camera.Focus
@@ -34,19 +48,19 @@ Camera.CameraType = Enum.CameraType.Scriptable
 -- BLUR
 local Blur = Instance.new("BlurEffect")
 Blur.Name = "NoobKeyBlur"
-Blur.Size = 12
+Blur.Size = BLUR_SIZE
 Blur.Parent = Lighting
 
 -- SCREEN GUI
 local GUI = Instance.new("ScreenGui")
-GUI.Name = "NoobKeySystem"
+GUI.Name = GUI_NAME
 GUI.IgnoreGuiInset = true
 GUI.ResetOnSpawn = false
-GUI.DisplayOrder = 1000
+GUI.DisplayOrder = 999
 GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 GUI.Parent = PlayerGui
 
--- DARK OVERLAY
+-- FULL SCREEN OVERLAY
 local Overlay = Instance.new("TextButton")
 Overlay.Name = "Overlay"
 Overlay.Size = UDim2.fromScale(1, 1)
@@ -114,6 +128,7 @@ local GetKey = Instance.new("TextButton")
 GetKey.Size = UDim2.new(1, -40, 0, 44)
 GetKey.Position = UDim2.fromOffset(20, 84)
 GetKey.BackgroundColor3 = Color3.fromRGB(114, 57, 234)
+GetKey.BorderSizePixel = 0
 GetKey.Text = "Get Key (Copy Link)"
 GetKey.TextColor3 = Color3.new(1, 1, 1)
 GetKey.Font = Enum.Font.GothamBold
@@ -124,53 +139,88 @@ GetKey.Parent = Main
 Instance.new("UICorner", GetKey).CornerRadius =
     UDim.new(0, 8)
 
--- LINK BOX
-local LinkBox = Instance.new("TextBox")
-LinkBox.Size = UDim2.new(1, -40, 0, 40)
-LinkBox.Position = UDim2.fromOffset(20, 140)
-LinkBox.BackgroundColor3 = Color3.fromRGB(35, 35, 42)
-LinkBox.TextColor3 = Color3.new(1, 1, 1)
-LinkBox.PlaceholderText = "Your key link appears here"
-LinkBox.Text = ""
-LinkBox.ClearTextOnFocus = false
-LinkBox.TextEditable = false
-LinkBox.Font = Enum.Font.Gotham
-LinkBox.TextSize = 11
-LinkBox.ZIndex = 7
-LinkBox.Parent = Main
+-- INPUT BOX
+local InputBox = Instance.new("TextBox")
+InputBox.Size = UDim2.new(1, -40, 0, 40)
+InputBox.Position = UDim2.fromOffset(20, 140)
+InputBox.BackgroundColor3 = Color3.fromRGB(35, 35, 42)
+InputBox.BorderSizePixel = 0
+InputBox.Text = ""
+InputBox.PlaceholderText = "Paste your key here..."
+InputBox.TextColor3 = Color3.new(1, 1, 1)
+InputBox.Font = Enum.Font.Gotham
+InputBox.TextSize = 14
+InputBox.ClearTextOnFocus = false
+InputBox.ZIndex = 7
+InputBox.Parent = Main
 
-Instance.new("UICorner", LinkBox).CornerRadius =
+Instance.new("UICorner", InputBox).CornerRadius =
     UDim.new(0, 8)
 
--- STATUS BUTTON
+-- PERMANENT STATUS BUTTON
 local Status = Instance.new("TextButton")
 Status.Size = UDim2.new(1, -40, 0, 40)
 Status.Position = UDim2.fromOffset(20, 190)
 Status.BackgroundColor3 = Color3.new(1, 1, 1)
+Status.BorderSizePixel = 0
 Status.Text = "Key System Active"
 Status.TextColor3 = Color3.fromRGB(24, 24, 28)
 Status.Font = Enum.Font.GothamBold
 Status.TextSize = 14
+Status.Active = false
+Status.AutoButtonColor = false
 Status.ZIndex = 7
 Status.Parent = Main
 
 Instance.new("UICorner", Status).CornerRadius =
     UDim.new(0, 8)
 
-Status.Active = false
-
--- GET LINK
+-- COPY LINK
 GetKey.Activated:Connect(function()
-    LinkBox.Text = KEY_LINK
-    GetKey.Text = "Link Displayed!"
-    task.wait(1.5)
+    local success = false
 
-    if GetKey.Parent then
-        GetKey.Text = "Get Key (Copy Link)"
+    if type(setclipboard) == "function" then
+        success = pcall(function()
+            setclipboard(KEY_LINK)
+        end)
     end
+
+    GetKey.Text = success and
+        "Link Copied!" or "Clipboard Unavailable"
+
+    task.delay(2, function()
+        if GetKey.Parent then
+            GetKey.Text = "Get Key (Copy Link)"
+        end
+    end)
 end)
 
--- KEEP CAMERA FIXED
+-- NO VERIFICATION
+-- Typing anything does nothing.
+-- GUI never closes after typing.
+
+-- BLOCK STANDARD GAMEPLAY INPUT
+local function BlockInput()
+    return Enum.ContextActionResult.Sink
+end
+
+ContextActionService:BindActionAtPriority(
+    "NoobInputLock",
+    BlockInput,
+    false,
+    9999,
+    Enum.KeyCode.W,
+    Enum.KeyCode.A,
+    Enum.KeyCode.S,
+    Enum.KeyCode.D,
+    Enum.KeyCode.Space,
+    Enum.KeyCode.Up,
+    Enum.KeyCode.Down,
+    Enum.KeyCode.Left,
+    Enum.KeyCode.Right
+)
+
+-- FIXED CAMERA
 RunService:BindToRenderStep(
     "NoobFixedCamera",
     Enum.RenderPriority.Camera.Value + 1,
@@ -180,6 +230,7 @@ RunService:BindToRenderStep(
         if CurrentCamera then
             CurrentCamera.CameraType =
                 Enum.CameraType.Scriptable
+
             CurrentCamera.CFrame = FixedCFrame
             CurrentCamera.Focus = FixedFocus
         end
@@ -187,3 +238,7 @@ RunService:BindToRenderStep(
 )
 
 print("Noob Key System Loaded")
+print("Verification: Disabled")
+print("Camera: Fixed")
+print("Standard Controls: Disabled")
+print("GUI: Persistent")
