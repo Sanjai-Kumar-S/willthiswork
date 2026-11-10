@@ -1,4 +1,4 @@
-
+-- made by Noob --
 --==================================================
 -- NOOB KEY SYSTEM
 -- Persistent GUI + Fixed Camera + Control Lock
@@ -18,7 +18,7 @@ local PlayerGui = Player:WaitForChild("PlayerGui")
 local KEY_LINK = "https://links-unlockr-gg.netlify.app/s?mOAtSVcp&data=qe4RQAE6kyWMDfsjlKZWN3TkZONzvfTcLlN3/OSuPE/3SxUitgWiEjzaDS1pz6md8uM02jv/pdxgS5O6qQU/DsVcWkZpzEOS8wfKXV5Z3SWdyYdyfQgQQ9LwLYy%2BBA8TNtO31PgWZ6XzFjY2F0t%2Bz3qMsfdzBlE1/IemBlQSQise4mc32YMo60W0jvD4aWRKJwh9kQ2t%2Buw286brYsvBHsXP3ldlfpIlehG3gGf0Q05gkNac%2BvDLdqzULY11HNPktVzAxovbA2EZK%2BvXBYte2Q%3D%3D"
 
 local GUI_NAME = "NoobKeySystem"
-local BLUR_SIZE = 12
+local BLUR_SIZE = 16
 
 -- CLEAN OLD INSTANCE
 RunService:UnbindFromRenderStep("NoobFixedCamera")
@@ -60,13 +60,13 @@ GUI.DisplayOrder = 999
 GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 GUI.Parent = PlayerGui
 
--- FULL SCREEN OVERLAY
+-- FULL SCREEN OVERLAY (Darker Background Transparency)
 local Overlay = Instance.new("TextButton")
 Overlay.Name = "Overlay"
 Overlay.Size = UDim2.fromScale(1, 1)
 Overlay.Position = UDim2.fromScale(0, 0)
 Overlay.BackgroundColor3 = Color3.new(0, 0, 0)
-Overlay.BackgroundTransparency = 0.5
+Overlay.BackgroundTransparency = 0.75
 Overlay.BorderSizePixel = 0
 Overlay.Text = ""
 Overlay.AutoButtonColor = false
@@ -136,8 +136,7 @@ GetKey.TextSize = 14
 GetKey.ZIndex = 7
 GetKey.Parent = Main
 
-Instance.new("UICorner", GetKey).CornerRadius =
-    UDim.new(0, 8)
+Instance.new("UICorner", GetKey).CornerRadius = UDim.new(0, 8)
 
 -- INPUT BOX
 local InputBox = Instance.new("TextBox")
@@ -154,16 +153,15 @@ InputBox.ClearTextOnFocus = false
 InputBox.ZIndex = 7
 InputBox.Parent = Main
 
-Instance.new("UICorner", InputBox).CornerRadius =
-    UDim.new(0, 8)
+Instance.new("UICorner", InputBox).CornerRadius = UDim.new(0, 8)
 
--- PERMANENT STATUS BUTTON
+-- VERIFY BUTTON
 local Status = Instance.new("TextButton")
 Status.Size = UDim2.new(1, -40, 0, 40)
 Status.Position = UDim2.fromOffset(20, 190)
 Status.BackgroundColor3 = Color3.new(1, 1, 1)
 Status.BorderSizePixel = 0
-Status.Text = "Key System Active"
+Status.Text = "Verify Key"
 Status.TextColor3 = Color3.fromRGB(24, 24, 28)
 Status.Font = Enum.Font.GothamBold
 Status.TextSize = 14
@@ -172,8 +170,7 @@ Status.AutoButtonColor = false
 Status.ZIndex = 7
 Status.Parent = Main
 
-Instance.new("UICorner", Status).CornerRadius =
-    UDim.new(0, 8)
+Instance.new("UICorner", Status).CornerRadius = UDim.new(0, 8)
 
 -- COPY LINK
 GetKey.Activated:Connect(function()
@@ -185,8 +182,7 @@ GetKey.Activated:Connect(function()
         end)
     end
 
-    GetKey.Text = success and
-        "Link Copied!" or "Clipboard Unavailable"
+    GetKey.Text = success and "Link Copied!" or "Clipboard Unavailable"
 
     task.delay(2, function()
         if GetKey.Parent then
@@ -194,10 +190,6 @@ GetKey.Activated:Connect(function()
         end
     end)
 end)
-
--- NO VERIFICATION
--- Typing anything does nothing.
--- GUI never closes after typing.
 
 -- BLOCK STANDARD GAMEPLAY INPUT
 local function BlockInput()
@@ -228,8 +220,7 @@ RunService:BindToRenderStep(
         local CurrentCamera = workspace.CurrentCamera
 
         if CurrentCamera then
-            CurrentCamera.CameraType =
-                Enum.CameraType.Scriptable
+            CurrentCamera.CameraType = Enum.CameraType.Scriptable
 
             CurrentCamera.CFrame = FixedCFrame
             CurrentCamera.Focus = FixedFocus
