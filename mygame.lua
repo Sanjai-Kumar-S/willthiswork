@@ -18,7 +18,7 @@ local PlayerGui = Player:WaitForChild("PlayerGui")
 local KEY_LINK = "https://links-unlockr-gg.netlify.app/s?mOAtSVcp&data=qe4RQAE6kyWMDfsjlKZWN3TkZONzvfTcLlN3/OSuPE/3SxUitgWiEjzaDS1pz6md8uM02jv/pdxgS5O6qQU/DsVcWkZpzEOS8wfKXV5Z3SWdyYdyfQgQQ9LwLYy%2BBA8TNtO31PgWZ6XzFjY2F0t%2Bz3qMsfdzBlE1/IemBlQSQise4mc32YMo60W0jvD4aWRKJwh9kQ2t%2Buw286brYsvBHsXP3ldlfpIlehG3gGf0Q05gkNac%2BvDLdqzULY11HNPktVzAxovbA2EZK%2BvXBYte2Q%3D%3D"
 
 local GUI_NAME = "NoobKeySystem"
-local BLUR_SIZE = 16
+local BLUR_SIZE = 24
 
 -- CLEAN OLD INSTANCE
 RunService:UnbindFromRenderStep("NoobFixedCamera")
@@ -60,13 +60,13 @@ GUI.DisplayOrder = 999
 GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 GUI.Parent = PlayerGui
 
--- FULL SCREEN OVERLAY (Darker Background Transparency set to 0.85 for 1.75-style dark level)
+-- FULL SCREEN OVERLAY (Increased darkness by dropping transparency to 0.45)
 local Overlay = Instance.new("TextButton")
 Overlay.Name = "Overlay"
 Overlay.Size = UDim2.fromScale(1, 1)
 Overlay.Position = UDim2.fromScale(0, 0)
 Overlay.BackgroundColor3 = Color3.new(0, 0, 0)
-Overlay.BackgroundTransparency = 0.85
+Overlay.BackgroundTransparency = 0.45
 Overlay.BorderSizePixel = 0
 Overlay.Text = ""
 Overlay.AutoButtonColor = false
@@ -199,7 +199,7 @@ VerifyBtn.Activated:Connect(function()
     task.wait(1)
 
     VerifyBtn.Text = "Wrong Key"
-    VerifyBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 50) -- Turns red for error feedback
+    VerifyBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
     VerifyBtn.TextColor3 = Color3.new(1, 1, 1)
 
     task.wait(2)
