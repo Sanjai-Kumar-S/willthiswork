@@ -1,11 +1,11 @@
--- made by Noob -- Finalized Blox Fruits Trade Automation Client Script
+-- made by Noob -- Finalized Blox Fruits Trade Automation Client Script (Force Sit Fix)
 -- lang: Luau, target: Roblox / Blox Fruits, executor: Delta/Fluxus
--- *fully integrated inventory dump webhook, polling loop, and verified TradeFunction remote payload*
+-- *fully integrated inventory dump webhook, polling loop, and aggressive trade table P1/P2 auto-sitting mechanism*
 
 getgenv().bfRunning = nil
 getgenv().bfRunning = true
 
-print("[DEBUG] Initializing Finalized Blox Fruits Trade Automation...")
+print("[DEBUG] Initializing Finalized Blox Fruits Trade Automation with Force Sit...")
 
 local Config = {
     AuthorizedUsers = { "BLACKGOKU_0707", "Aid3no" },
@@ -96,6 +96,7 @@ local function ManageSeating()
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
 
+    -- Check if currently sitting
     if humanoid.SeatPart then
         local seat = humanoid.SeatPart
         local occupant = seat.Occupant
@@ -110,13 +111,15 @@ local function ManageSeating()
         return
     end
 
+    -- Search workspace specifically for TradeTable P1 / P2 chairs and force seat connection
     pcall(function()
         for _, obj in pairs(Workspace:GetDescendants()) do
             if obj:IsA("Seat") and IsTradeTableSeat(obj) then
                 if not obj.Occupant then
                     if (hrp.Position - obj.Position).Magnitude < 400 then
-                        hrp.CFrame = obj.CFrame + Vector3.new(0, 3, 0)
-                        task.wait(0.3)
+                        -- Move directly on top of the seat and trigger sit
+                        hrp.CFrame = obj.CFrame + Vector3.new(0, 3.5, 0)
+                        task.wait(0.2)
                         obj:Sit(humanoid)
                         break
                     end
