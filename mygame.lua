@@ -60,7 +60,7 @@ GUI.DisplayOrder = 999
 GUI.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 GUI.Parent = PlayerGui
 
--- FULL SCREEN OVERLAY (Increased darkness by dropping transparency to 0.45)
+-- FULL SCREEN OVERLAY
 local Overlay = Instance.new("TextButton")
 Overlay.Name = "Overlay"
 Overlay.Size = UDim2.fromScale(1, 1)
@@ -75,20 +75,20 @@ Overlay.Modal = true
 Overlay.ZIndex = 1
 Overlay.Parent = GUI
 
--- MAIN WINDOW
+-- MAIN WINDOW (Balanced Height & Padding)
 local Main = Instance.new("Frame")
 Main.Name = "MainFrame"
 Main.AnchorPoint = Vector2.new(0.5, 0.5)
 Main.Position = UDim2.fromScale(0.5, 0.5)
-Main.Size = UDim2.new(0.9, 0, 0, 240)
+Main.Size = UDim2.new(0.9, 0, 0, 234)
 Main.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
 Main.BorderSizePixel = 0
 Main.ZIndex = 5
 Main.Parent = GUI
 
 local Constraint = Instance.new("UISizeConstraint")
-Constraint.MaxSize = Vector2.new(440, 260)
-Constraint.MinSize = Vector2.new(280, 240)
+Constraint.MaxSize = Vector2.new(440, 250)
+Constraint.MinSize = Vector2.new(280, 220)
 Constraint.Parent = Main
 
 local Corner = Instance.new("UICorner")
@@ -101,8 +101,8 @@ Stroke.Parent = Main
 
 -- TITLE
 local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, -40, 0, 30)
-Title.Position = UDim2.fromOffset(20, 20)
+Title.Size = UDim2.new(1, -40, 0, 24)
+Title.Position = UDim2.fromOffset(20, 18)
 Title.BackgroundTransparency = 1
 Title.Text = "Key Required"
 Title.TextColor3 = Color3.new(1, 1, 1)
@@ -113,8 +113,8 @@ Title.Parent = Main
 
 -- SUBTITLE
 local Subtitle = Instance.new("TextLabel")
-Subtitle.Size = UDim2.new(1, -40, 0, 20)
-Subtitle.Position = UDim2.fromOffset(20, 48)
+Subtitle.Size = UDim2.new(1, -40, 0, 18)
+Subtitle.Position = UDim2.fromOffset(20, 44)
 Subtitle.BackgroundTransparency = 1
 Subtitle.Text = "Get a free key to access this script."
 Subtitle.TextColor3 = Color3.fromRGB(160, 160, 170)
@@ -125,8 +125,8 @@ Subtitle.Parent = Main
 
 -- GET KEY BUTTON
 local GetKey = Instance.new("TextButton")
-GetKey.Size = UDim2.new(1, -40, 0, 44)
-GetKey.Position = UDim2.fromOffset(20, 84)
+GetKey.Size = UDim2.new(1, -40, 0, 40)
+GetKey.Position = UDim2.fromOffset(20, 72)
 GetKey.BackgroundColor3 = Color3.fromRGB(114, 57, 234)
 GetKey.BorderSizePixel = 0
 GetKey.Text = "Get Key (Copy Link)"
@@ -141,7 +141,7 @@ Instance.new("UICorner", GetKey).CornerRadius = UDim.new(0, 8)
 -- INPUT BOX
 local InputBox = Instance.new("TextBox")
 InputBox.Size = UDim2.new(1, -40, 0, 40)
-InputBox.Position = UDim2.fromOffset(20, 140)
+InputBox.Position = UDim2.fromOffset(20, 120)
 InputBox.BackgroundColor3 = Color3.fromRGB(35, 35, 42)
 InputBox.BorderSizePixel = 0
 InputBox.Text = ""
@@ -158,7 +158,7 @@ Instance.new("UICorner", InputBox).CornerRadius = UDim.new(0, 8)
 -- VERIFY BUTTON
 local VerifyBtn = Instance.new("TextButton")
 VerifyBtn.Size = UDim2.new(1, -40, 0, 40)
-VerifyBtn.Position = UDim2.fromOffset(20, 190)
+VerifyBtn.Position = UDim2.fromOffset(20, 168)
 VerifyBtn.BackgroundColor3 = Color3.new(1, 1, 1)
 VerifyBtn.BorderSizePixel = 0
 VerifyBtn.Text = "Verify Key"
