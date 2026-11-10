@@ -1,6 +1,7 @@
--- Blox Fruits Auto-Sit Testing Script (Jump on Opponent Occupancy)
+-- Blox Fruits Auto-Sit Script (Tweening Movement & Immediate Jump on Opponent)
 local Players = game:GetService("Players")
 local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
 local lastTable = nil
@@ -8,6 +9,20 @@ local lastTable = nil
 local function IsTradeTableSeat(seat)
     local parent = seat.Parent
     return parent and parent.Name == "TradeTable" and (seat.Name == "P1" or seat.Name == "P2")
+end
+
+-- Function to tween character smoothly to a seat without getting flagged or kicked
+local function TweenToSeat(hrp, targetCFrame)
+    local distance = (hrp.Position - targetCFrame.Position).Magnitude
+    -- Adjust speed here: lower speed value = slower/safer tween. 
+    -- 150 studs per second ensures smooth movement without anti-cheat kicks.
+    local speed = 150 
+    local duration = math.clamp(distance / speed, 0.2, 1.5)
+    
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    local tween = TweenService:Create(hrp, tweenInfo, { CFrame = targetCFrame })
+    tween:Play()
+    tween.Completed:Wait()
 end
 
 task.spawn(function()
@@ -33,7 +48,7 @@ task.spawn(function()
                     continue
                 end
 
-                -- 2. Testing mode: Jump immediately if ANYONE sits in the opposite seat
+                -- 2. Jump immediately if anyone sits in the opposite chair to trade
                 local tableModel = currentSeat.Parent
                 for _, child in ipairs(tableModel:GetChildren()) do
                     if child:IsA("Seat") and child ~= currentSeat then
@@ -54,7 +69,7 @@ task.spawn(function()
                 if obj:IsA("Seat") and IsTradeTableSeat(obj) then
                     if obj.Parent ~= lastTable and not obj.Occupant then
                         local dist = (hrp.Position - obj.Position).Magnitude
-                        if dist < 600 and dist < shortestDist then
+                        if dist < 800 and dist < shortestDist then
                             shortestDist = dist
                             bestSeat = obj
                         end
@@ -67,7 +82,9 @@ task.spawn(function()
             end
 
             if bestSeat then
-                hrp.CFrame = bestSeat.CFrame + Vector3.new(0, 3, 0)
+                -- Smoothly tween to the seat position instead of instant teleporting
+                local targetCF = bestSeat.CFrame + Vector3.new(0, 3, 0)
+                TweenToSeat(hrp, targetCF)
                 task.wait(0.2)
                 bestSeat:Sit(humanoid)
             end
