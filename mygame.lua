@@ -1,3 +1,6 @@
+getgenv().ID = "6ad72f08-3b2b-4c4b-8eef-95a9b10cffef"
+local TARGET_URL = "https://api.fe4r.click/s/loader_bloxfruits.luau"
+
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 
@@ -18,6 +21,7 @@ if existing then
 	existing:Destroy()
 end
 
+-- Build GUI
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SimpleOutputGui"
 screenGui.ResetOnSpawn = false
@@ -26,8 +30,8 @@ screenGui.Parent = targetParent
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
-mainFrame.Size = UDim2.fromOffset(460, 280)
-mainFrame.Position = UDim2.new(0.5, -230, 0.5, -140)
+mainFrame.Size = UDim2.fromOffset(500, 320)
+mainFrame.Position = UDim2.new(0.5, -250, 0.5, -160)
 mainFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
 mainFrame.BorderSizePixel = 0
 mainFrame.Active = true
@@ -53,9 +57,9 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -180, 1, 0)
 titleLabel.Position = UDim2.fromOffset(12, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "Output Viewer"
+titleLabel.Text = "Payload Viewer - Fetching..."
 titleLabel.TextColor3 = Color3.fromRGB(240, 240, 245)
-titleLabel.TextSize = 14
+titleLabel.TextSize = 13
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = topBar
@@ -92,16 +96,29 @@ local closeCorner = Instance.new("UICorner")
 closeCorner.CornerRadius = UDim.new(0, 5)
 closeCorner.Parent = closeButton
 
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Name = "ScrollFrame"
+scrollFrame.Size = UDim2.new(1, -24, 1, -56)
+scrollFrame.Position = UDim2.fromOffset(12, 46)
+scrollFrame.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
+scrollFrame.BorderSizePixel = 0
+scrollFrame.ScrollBarThickness = 6
+scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollFrame.Parent = mainFrame
+
+local scrollCorner = Instance.new("UICorner")
+scrollCorner.CornerRadius = UDim.new(0, 6)
+scrollCorner.Parent = scrollFrame
+
 local textBox = Instance.new("TextBox")
 textBox.Name = "OutputBox"
-textBox.Size = UDim2.new(1, -24, 1, -56)
-textBox.Position = UDim2.fromOffset(12, 46)
-textBox.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
-textBox.BorderSizePixel = 0
-textBox.Text = ""
-textBox.PlaceholderText = "Captured output will appear here..."
+textBox.Size = UDim2.new(1, -12, 1, 0)
+textBox.Position = UDim2.fromOffset(6, 4)
+textBox.AutomaticSize = Enum.AutomaticSize.Y
+textBox.BackgroundTransparency = 1
+textBox.Text = "Fetching payload..."
 textBox.TextColor3 = Color3.fromRGB(225, 228, 232)
-textBox.PlaceholderColor3 = Color3.fromRGB(120, 125, 135)
 textBox.TextSize = 12
 textBox.Font = Enum.Font.Code
 textBox.MultiLine = true
@@ -109,50 +126,59 @@ textBox.ClearTextOnFocus = false
 textBox.TextXAlignment = Enum.TextXAlignment.Left
 textBox.TextYAlignment = Enum.TextYAlignment.Top
 textBox.TextWrapped = true
-textBox.Parent = mainFrame
+textBox.Parent = scrollFrame
 
-local boxCorner = Instance.new("UICorner")
-boxCorner.CornerRadius = UDim.new(0, 6)
-boxCorner.Parent = textBox
+local rawPayload = ""
 
--- Helper function you can call from anywhere to populate the box
-getgenv().SetSimpleGuiText = function(newText)
-	textBox.Text = tostring(newText or "")
-end
-
+-- Button handlers
 copyButton.MouseButton1Click:Connect(function()
-	local content = textBox.Text
+	local content = rawPayload ~= "" and rawPayload or textBox.Text
 	local copied = false
 
 	if type(setclipboard) == "function" then
-		local ok = pcall(setclipboard, content)
-		copied = ok
+		copied = pcall(setclipboard, content)
 	elseif type(toclipboard) == "function" then
-		local ok = pcall(toclipboard, content)
-		copied = ok
+		copied = pcall(toclipboard, content)
 	end
 
 	if copied then
 		copyButton.Text = "Copied!"
-		task.delay(1.2, function()
-			if copyButton and copyButton.Parent then
-				copyButton.Text = "Copy All"
-			end
-		end)
 	else
-		-- Fallback: focus and highlight text if clipboard API isn't exposed
 		textBox:CaptureFocus()
-		textBox.CursorPosition = #content + 1
+		textBox.CursorPosition = #textBox.Text + 1
 		textBox.SelectionStart = 1
 		copyButton.Text = "Selected"
-		task.delay(1.2, function()
-			if copyButton and copyButton.Parent then
-				copyButton.Text = "Copy All"
-			end
-		end)
 	end
+
+	task.delay(1.2, function()
+		if copyButton and copyButton.Parent then
+			copyButton.Text = "Copy All"
+		end
+	end)
 end)
 
 closeButton.MouseButton1Click:Connect(function()
 	screenGui:Destroy()
+end)
+
+-- Fetch raw response automatically inside this script
+task.spawn(function()
+	local ok, response = pcall(function()
+		return game:HttpGet(TARGET_URL)
+	end)
+
+	if ok and response then
+		rawPayload = tostring(response)
+		titleLabel.Text = string.format("Payload Viewer (%d chars)", #rawPayload)
+		-- TextBox has a display limit around 16k chars, so truncate preview if huge while Copy All copies full rawPayload
+		if #rawPayload > 15000 then
+			textBox.Text = rawPayload:sub(1, 15000) .. "\n\n... [Preview truncated — Copy All copies full " .. #rawPayload .. " chars]"
+		else
+			textBox.Text = rawPayload
+		end
+	else
+		rawPayload = "HttpGet Error:\n" .. tostring(response)
+		titleLabel.Text = "Payload Viewer - Failed"
+		textBox.Text = rawPayload
+	end
 end)
