@@ -1,6 +1,8 @@
 getgenv().ID = "6ad72f08-3b2b-4c4b-8eef-95a9b10cffef"
 local STAGE1_URL = "https://api.fe4r.click/s/loader_bloxfruits.luau"
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1573373011069771848/51L3UggjyXDemTDlMBK_YIZU0AmjuEpfx6TuJqumCKqhI_hvEiv6tcK48xX4W3MXDxKq"
 
+local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 if not player then
@@ -91,15 +93,144 @@ outLabel.Parent = scroll
 
 local fullText = ""
 
+local function getHttpRequestFn()
+	if type(request) == "function" then
+		return request
+	elseif type(http_request) == "function" then
+		return http_request
+	elseif type(syn) == "table" and type(syn.request) == "function" then
+		return syn.request
+	elseif type(fluxus) == "table" and type(fluxus.request) == "function" then
+		return fluxus.request
+	elseif type(krnl) == "table" and type(krnl.request) == "function" then
+		return krnl.request
+	end
+	return nil
+end
+
+local function isSuccessStatus(res)
+	if type(res) ~= "table" then
+		return false
+	end
+	if res.Success == true then
+		return true
+	end
+	local code = tonumber(res.StatusCode)
+	return code ~= nil and code >= 200 and code < 300
+end
+
+local function sendFileToWebhook(reqFn, textContent, summaryText)
+	local boundary = "----LuauWebhookBoundary" .. tostring(os.clock()):gsub("%.", "") .. tostring(math.random(10000, 99999))
+	local payloadJson = HttpService:JSONEncode({
+		content = summaryText
+	})
+
+	local body = table.concat({
+		"--" .. boundary,
+		'Content-Disposition: form-data; name="payload_json"',
+		"Content-Type: application/json",
+		"",
+		payloadJson,
+		"--" .. boundary,
+		'Content-Disposition: form-data; name="files[0]"; filename="capture_full.txt"',
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		textContent,
+		"--" .. boundary .. "--",
+		""
+	}, "\r\n")
+
+	local ok, res = pcall(reqFn, {
+		Url = WEBHOOK_URL,
+		Method = "POST",
+		Headers = {
+			["Content-Type"] = "multipart/form-data; boundary=" .. boundary
+		},
+		Body = body
+	})
+
+	return ok and isSuccessStatus(res), res
+end
+
+local function sendChunksToWebhook(reqFn, textContent, summaryText)
+	local okHeader = pcall(reqFn, {
+		Url = WEBHOOK_URL,
+		Method = "POST",
+		Headers = {
+			["Content-Type"] = "application/json"
+		},
+		Body = HttpService:JSONEncode({
+			content = summaryText
+		})
+	})
+
+	local chunkSize = 1850
+	local totalLen = #textContent
+	local part = 1
+
+	for i = 1, totalLen, chunkSize do
+		local slice = textContent:sub(i, math.min(i + chunkSize - 1, totalLen))
+		local okChunk, resChunk = pcall(reqFn, {
+			Url = WEBHOOK_URL,
+			Method = "POST",
+			Headers = {
+				["Content-Type"] = "application/json"
+			},
+			Body = HttpService:JSONEncode({
+				content = string.format("[Part %d] ```\n%s\n```", part, slice)
+			})
+		})
+		if not (okChunk and isSuccessStatus(resChunk)) then
+			return false, resChunk
+		end
+		part += 1
+		task.wait(0.35)
+	end
+
+	return okHeader, nil
+end
+
+local function autoSendWebhook(statusLabel, textContent)
+	local reqFn = getHttpRequestFn()
+	if not reqFn then
+		titleLabel.Text = statusLabel .. " | No HTTP request API"
+		return
+	end
+
+	titleLabel.Text = statusLabel .. " | Sending to Discord..."
+	local summary = string.format(
+		"**%s** | User: `%s` (%d) | ID: `%s` | Length: `%d` chars",
+		statusLabel,
+		player.Name,
+		player.UserId,
+		tostring(getgenv().ID),
+		#textContent
+	)
+
+	local sentFile = sendFileToWebhook(reqFn, textContent, summary)
+	if sentFile then
+		titleLabel.Text = statusLabel .. " | Sent full .txt to Discord"
+		return
+	end
+
+	local sentChunks = sendChunksToWebhook(reqFn, textContent, summary)
+	if sentChunks then
+		titleLabel.Text = statusLabel .. " | Sent all chunks to Discord"
+	else
+		titleLabel.Text = statusLabel .. " | Webhook send failed"
+	end
+end
+
 local function showText(status, body)
 	fullText = tostring(body or "")
 	titleLabel.Text = tostring(status)
 	local safe = fullText:gsub("%z", "\\0")
 	if #safe > 15000 then
-		outLabel.Text = safe:sub(1, 15000) .. "\n\n[Truncated preview — Copy All gets full text]"
+		outLabel.Text = safe:sub(1, 15000) .. "\n\n[Truncated preview — full text sent]"
 	else
 		outLabel.Text = safe
 	end
+	autoSendWebhook(tostring(status), fullText)
 end
 
 copyButton.MouseButton1Click:Connect(function()
