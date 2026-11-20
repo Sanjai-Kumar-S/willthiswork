@@ -1,3 +1,6 @@
+-- lang: Luau, file: resolver.lua, target: Roblox / Blox Fruits Automation
+-- resolves partial names, bracket syntax (!add <light>), perm shortcuts (!add perm rocket), and dictionary keys
+
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextChatService = game:GetService("TextChatService")
@@ -82,6 +85,71 @@ local MasterItemDictionary = {
     ["scarlet ghost"]            = "scarlet ghost",
 
     -- =========================================================================
+    -- 2. MYTHICAL PHYSICAL FRUITS
+    -- =========================================================================
+    ["dragon"]                   = "Dragon-Dragon",
+    ["kitsune"]                  = "Kitsune-Kitsune",
+    ["yeti"]                     = "Yeti-Yeti",
+    ["tiger"]                    = "Tiger-Tiger",
+    ["gas"]                      = "Gas-Gas",
+    ["spirit"]                   = "Spirit-Spirit",
+    ["control"]                  = "Control-Control",
+    ["venom"]                    = "Venom-Venom",
+    ["shadow"]                   = "Shadow-Shadow",
+    ["dough"]                    = "Dough-Dough",
+    ["t-rex"]                    = "T-Rex-T-Rex",
+    ["trex"]                     = "T-Rex-T-Rex",
+    ["mammoth"]                  = "Mammoth-Mammoth",
+    ["gravity"]                  = "Gravity-Gravity",
+    ["leopard"]                  = "Leopard-Leopard",
+    ["leo"]                      = "Leopard-Leopard",
+
+    -- =========================================================================
+    -- 3. LEGENDARY PHYSICAL FRUITS
+    -- =========================================================================
+    ["blizzard"]                 = "Blizzard-Blizzard",
+    ["portal"]                   = "Portal-Portal",
+    ["phoenix"]                  = "Phoenix-Phoenix",
+    ["sound"]                    = "Sound-Sound",
+    ["buddha"]                   = "Buddha-Buddha",
+    ["quake"]                    = "Quake-Quake",
+    ["rumble"]                   = "Rumble-Rumble",
+    ["love"]                     = "Love-Love",
+    ["spider"]                   = "Spider-Spider",
+    ["pain"]                     = "Pain-Pain",
+
+    -- =========================================================================
+    -- 4. RARE PHYSICAL FRUITS
+    -- =========================================================================
+    ["magma"]                    = "Magma-Magma",
+    ["ghost"]                    = "Ghost-Ghost",
+    ["rubber"]                   = "Rubber-Rubber",
+    ["barrier"]                  = "Barrier-Barrier",
+    ["light"]                    = "Light-Light",
+    ["diamond"]                  = "Diamond-Diamond",
+
+    -- =========================================================================
+    -- 5. UNCOMMON PHYSICAL FRUITS
+    -- =========================================================================
+    ["dark"]                     = "Dark-Dark",
+    ["sand"]                     = "Sand-Sand",
+    ["ice"]                      = "Ice-Ice",
+    ["falcon"]                   = "Falcon-Falcon",
+    ["flame"]                    = "Flame-Flame",
+
+    -- =========================================================================
+    -- 6. COMMON PHYSICAL FRUITS
+    -- =========================================================================
+    ["spike"]                    = "Spike-Spike",
+    ["smoke"]                    = "Smoke-Smoke",
+    ["bomb"]                     = "Bomb-Bomb",
+    ["spring"]                   = "Spring-Spring",
+    ["blade"]                    = "Blade-Blade",
+    ["chop"]                     = "Blade-Blade",
+    ["spin"]                     = "Spin-Spin",
+    ["rocket"]                   = "Rocket-Rocket",
+
+    -- =========================================================================
     -- 7. GAMEPASSES & SPECIAL REDEEMABLES (Hardcoded & Dynamic Filter)
     -- =========================================================================
     ["storage"]                  = "+1 Fruit Storage",
@@ -103,10 +171,13 @@ local PermFruitAliases = {
 
 local function resolveItemKey(userInput)
     if type(userInput) ~= "string" then return nil end
+
+    -- Strip whitespace and optional angle brackets: "!add <light>" -> "light"
     local query = userInput:lower():match("^%s*(.-)%s*$")
+    query = query:gsub("^<(.-)>$", "%1"):match("^%s*(.-)%s*$")
     if query == "" then return nil end
 
-    -- Expand "perm <fruit>" -> "permanent <fruit>" (matches Display "Permanent Rocket" & StorageKey "Permanent Rocket-Rocket")
+    -- Expand "perm <fruit>" -> "permanent <fruit>"
     if query:sub(1, 5) == "perm " then
         local fruitName = query:sub(6):match("^%s*(.-)%s*$")
         fruitName = PermFruitAliases[fruitName] or fruitName
@@ -184,4 +255,4 @@ else
     LocalPlayer.Chatted:Connect(handleChatCommand)
 end
 
-print("[Trade] Chat listener active. Type '!add <fruit/perm/skin/gamepass>' while seated at a trade table.")
+print("[Trade] Chat listener active. Type '!add <item>' while seated at a trade table.")
