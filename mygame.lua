@@ -1,5 +1,4 @@
 -- lang: Luau, file: resolver.lua, target: Roblox / Blox Fruits Automation
--- fixes duplicate listener stacking (_G cleanup), double MessageReceived firing, and physical fruit lookup
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -14,7 +13,7 @@ local ItemReplicationService = require(ReplicatedStorage:WaitForChild("ItemRepli
 local KEYS = require(ReplicatedStorage.ItemReplicationService:WaitForChild("KEYS"))
 local ItemConfig = require(ReplicatedStorage:WaitForChild("ItemConfig"))
 
--- Clean up any old chat listener if you re-executed the script
+-- Disconnect previous instance on re-execute
 if _G.TradeAddListener then
     pcall(function() _G.TradeAddListener:Disconnect() end)
     _G.TradeAddListener = nil
@@ -124,10 +123,6 @@ local function resolveItemKey(userInput)
     return MasterItemDictionary[query] or query
 end
 
-local function isItemOwned(val)
-    return val == true or (type(val) == "number" and val > 0)
-end
-
 local function findItemId(targetName)
     local resolvedQuery = resolveItemKey(targetName)
     if not resolvedQuery then return nil end
@@ -136,25 +131,15 @@ local function findItemId(targetName)
     local hyphenForm = queryLower .. "-" .. queryLower
     local isPermQuery = queryLower:sub(1, 10) == "permanent "
 
-    -- 1. Search ItemReplicationService across all KEYS buckets (IS_OWNED, COUNT, etc.)
-    local bucketsToScan = {}
-    if type(KEYS) == "table" then
-        for _, keyVal in pairs(KEYS) do
-            local ok, items = pcall(function()
-                return ItemReplicationService:GetItems(keyVal)
-            end)
-            if ok and type(items) == "table" then
-                table.insert(bucketsToScan, items)
-            end
-        end
-    end
+    -- 1. Primary lookup: KEYS.IS_OWNED (handles skins, perms, gamepasses, and replicated fruits)
+    local ownedItems = ItemReplicationService:GetItems(KEYS.IS_OWNED)
+    if type(ownedItems) == "table" then
+        for _, item in pairs(ownedItems) do
+            if (item.Value == true or (type(item.Value) == "number" and item.Value > 0)) and item.ItemId then
+                local ok, cfg = pcall(function()
+                    return ItemConfig.tryGet(item.ItemId)
+                end)
 
-    local partialId, partialName = nil, nil
-
-    for _, itemBucket in ipairs(bucketsToScan) do
-        for _, item in pairs(itemBucket) do
-            if type(item) == "table" and isItemOwned(item.Value) and item.ItemId then
-                local ok, cfg = pcall(ItemConfig.tryGet, item.ItemId)
                 if ok and type(cfg) == "table" and cfg.Display then
                     local displayName = (cfg.Display.Name or ""):lower()
                     local storageKey = (cfg.Index and cfg.Index.StorageKey or ""):lower()
@@ -166,13 +151,10 @@ local function findItemId(targetName)
                             or storageKey == queryLower
                             or storageKey == hyphenForm
                             or itemIdLower == queryLower
+                            or displayName:find(queryLower, 1, true)
+                            or storageKey:find(queryLower, 1, true)
                         then
                             return item.ItemId, cfg.Display.Name or resolvedQuery
-                        end
-
-                        if not partialId and (displayName:find(queryLower, 1, true) or storageKey:find(queryLower, 1, true)) then
-                            partialId = item.ItemId
-                            partialName = cfg.Display.Name or resolvedQuery
                         end
                     end
                 end
@@ -180,11 +162,7 @@ local function findItemId(targetName)
         end
     end
 
-    if partialId then
-        return partialId, partialName
-    end
-
-    -- 2. Fallback: Check CommF_ getInventory for physical fruits stored as "Venom-Venom"
+    -- 2. Fallback lookup: CommF_ getInventory (handles physical fruits like Venom-Venom)
     if not isPermQuery then
         local ok, inv = pcall(function()
             return CommF_:InvokeServer("getInventory")
@@ -192,10 +170,10 @@ local function findItemId(targetName)
         if ok and type(inv) == "table" then
             for _, entry in ipairs(inv) do
                 if type(entry) == "table" and entry.Name then
-                    local entryLower = entry.Name:lower()
-                    if entryLower == queryLower
-                        or entryLower == hyphenForm
-                        or entryLower:find(queryLower, 1, true)
+                    local nameLower = entry.Name:lower()
+                    if nameLower == queryLower
+                        or nameLower == hyphenForm
+                        or nameLower:find(queryLower, 1, true)
                     then
                         return entry.Name, entry.Name
                     end
@@ -207,9 +185,9 @@ local function findItemId(targetName)
     return nil
 end
 
--- Strict debounce so a single chat message can never invoke TradeFunction twice
-local lastMessageId = nil
-local lastExecTime = 0
+-- Deduplicate by MessageId + 0.5s cooldown so it fires once on whichever Status arrives first
+local seenMessages = {}
+local lastTime = 0
 
 local function handleChatCommand(rawText, messageId)
     if type(rawText) ~= "string" then return end
@@ -217,12 +195,14 @@ local function handleChatCommand(rawText, messageId)
     local lowerText = rawText:lower()
     if lowerText:sub(1, #COMMAND_PREFIX) ~= COMMAND_PREFIX then return end
 
-    local now = os.clock()
-    if (messageId and messageId == lastMessageId) or (now - lastExecTime < 0.8) then
-        return
+    if messageId then
+        if seenMessages[messageId] then return end
+        seenMessages[messageId] = true
+    else
+        local now = os.clock()
+        if now - lastTime < 0.5 then return end
+        lastTime = now
     end
-    lastMessageId = messageId
-    lastExecTime = now
 
     local targetInput = rawText:sub(#COMMAND_PREFIX + 1)
     local itemId, resolvedName = findItemId(targetInput)
@@ -244,10 +224,7 @@ end
 if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
     _G.TradeAddListener = TextChatService.MessageReceived:Connect(function(textChatMessage)
         if textChatMessage.TextSource and textChatMessage.TextSource.UserId == LocalPlayer.UserId then
-            -- Fire only once on initial send, ignore the replicated Success echo
-            if textChatMessage.Status == Enum.TextChatMessageStatus.Sending then
-                handleChatCommand(textChatMessage.Text, textChatMessage.MessageId)
-            end
+            handleChatCommand(textChatMessage.Text, textChatMessage.MessageId)
         end
     end)
 else
@@ -256,4 +233,4 @@ else
     end)
 end
 
-print("[Trade] Chat listener active (old listeners cleared). Type '!add <item>' at a trade table.")
+print("[Trade] Chat listener active. Type '!add <item>' while seated at a trade table.")
