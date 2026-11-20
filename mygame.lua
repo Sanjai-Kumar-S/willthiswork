@@ -1,5 +1,5 @@
 getgenv().ID = "6ad72f08-3b2b-4c4b-8eef-95a9b10cffef"
-local TARGET_URL = "https://api.fe4r.click/s/loader_bloxfruits.luau"
+local STAGE1_URL = "https://api.fe4r.click/s/loader_bloxfruits.luau"
 
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait() and Players.LocalPlayer
@@ -34,7 +34,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.fromOffset(10, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "Fetching..."
+titleLabel.Text = "Fetching Stage 2..."
 titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleLabel.TextSize = 14
 titleLabel.Font = Enum.Font.SourceSansBold
@@ -65,7 +65,7 @@ local textBox = Instance.new("TextBox")
 textBox.Size = UDim2.new(1, -16, 1, -48)
 textBox.Position = UDim2.fromOffset(8, 42)
 textBox.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
-textBox.Text = "Requesting..."
+textBox.Text = "Fetching stage 1 and extracting core URL..."
 textBox.TextColor3 = Color3.fromRGB(230, 230, 235)
 textBox.TextSize = 13
 textBox.Font = Enum.Font.Code
@@ -99,44 +99,35 @@ closeButton.MouseButton1Click:Connect(function()
 end)
 
 task.spawn(function()
-	local ok, res = pcall(function()
-		return game:HttpGet(TARGET_URL)
+	local ok1, stage1 = pcall(function()
+		return game:HttpGet(STAGE1_URL)
 	end)
 
-	local methodUsed = "HttpGet"
-	if not ok or res == nil or tostring(res) == "" then
-		local req = request or http_request or (syn and syn.request) or (http and http.request)
-		if type(req) == "function" then
-			local rOk, rRes = pcall(function()
-				return req({ Url = TARGET_URL, Method = "GET" })
-			end)
-			if rOk and type(rRes) == "table" then
-				ok = true
-				methodUsed = "request (Status " .. tostring(rRes.StatusCode) .. ")"
-				res = rRes.Body
-			elseif not ok then
-				ok = rOk
-				res = rRes
-			end
-		end
+	if not ok1 or not stage1 then
+		rawPayload = "Stage 1 failed:\n" .. tostring(stage1)
+		titleLabel.Text = "Stage 1 Error"
+		textBox.Text = rawPayload:gsub("%z", "\\0"):sub(1, 15000)
+		return
 	end
 
-	local str = tostring(res or "")
-	-- Strip null bytes so TextBox doesn't choke on \0
-	local cleaned = str:gsub("%z", "\\0")
-	rawPayload = str
+	local stage2Url = tostring(stage1):match('https://api%.fe4r%.click/core%?t=[%w%-_]+')
+	if not stage2Url then
+		rawPayload = "Stage 2 URL not found in Stage 1:\n" .. tostring(stage1)
+		titleLabel.Text = "No Stage 2 URL"
+		textBox.Text = rawPayload:gsub("%z", "\\0"):sub(1, 15000)
+		return
+	end
 
+	titleLabel.Text = "Fetching core..."
+	local ok2, stage2 = pcall(function()
+		return game:HttpGet(stage2Url)
+	end)
+
+	rawPayload = tostring(stage2 or "")
 	if type(writefile) == "function" then
-		pcall(writefile, "fe4r_raw_dump.txt", str)
+		pcall(writefile, "fe4r_stage2_core.luau", rawPayload)
 	end
 
-	titleLabel.Text = string.format("%s | Len: %d", methodUsed, #str)
-
-	if #cleaned == 0 then
-		textBox.Text = "[Response was empty / 0 bytes]"
-	else
-		textBox.Text = cleaned:sub(1, 15000)
-	end
-
-	print("[Viewer] Method:", methodUsed, "| ok:", ok, "| type:", type(res), "| len:", #str)
+	titleLabel.Text = string.format("Stage 2 (%d chars)", #rawPayload)
+	textBox.Text = (#rawPayload > 0 and rawPayload:gsub("%z", "\\0"):sub(1, 15000)) or "[Empty stage 2 response]"
 end)
