@@ -1,217 +1,245 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local HttpService = game:GetService("HttpService")
 local CoreGui = game:GetService("CoreGui")
 
-local results = {}
-local seen = {}
+local LocalPlayer = Players.LocalPlayer
+local ItemReplicationService = require(ReplicatedStorage:WaitForChild("ItemReplicationService"))
+local KEYS = require(ReplicatedStorage.ItemReplicationService:WaitForChild("KEYS"))
+local ItemConfig = require(ReplicatedStorage:WaitForChild("ItemConfig"))
 
-local function extractField(tbl, key)
-    if type(tbl) ~= "table" then return nil end
-    local ok, val = pcall(function() return tbl[key] end)
-    return ok and val or nil
+local function isOwned(itemId)
+    local ok, owned = pcall(function()
+        return ItemReplicationService:GetItems(KEYS.IS_OWNED)
+    end)
+    if not ok or type(owned) ~= "table" then return false end
+
+    for _, entry in pairs(owned) do
+        if entry and tostring(entry.ItemId) == tostring(itemId) then
+            if entry.Value == true then return true end
+            if type(entry.Value) == "number" and entry.Value > 0 then return true end
+            if type(entry.Count) == "number" and entry.Count > 0 then return true end
+        end
+    end
+    return false
 end
 
-local function scanTable(tbl, depth)
-    if depth > 5 or type(tbl) ~= "table" or seen[tbl] then
-        return
+local function isFruitEntry(id, cfg)
+    if type(cfg) ~= "table" then return false end
+    local idStr = tostring(id or ""):lower()
+    local dispName = (cfg.Display and cfg.Display.Name and tostring(cfg.Display.Name):lower()) or ""
+    local storageKey = (cfg.Index and cfg.Index.StorageKey and tostring(cfg.Index.StorageKey):lower()) or ""
+    local itemType = (cfg.Type or cfg.Category or cfg.ItemType or "")
+    itemType = tostring(itemType):lower()
+
+    if itemType:find("fruit", 1, true) or itemType:find("blox", 1, true) then
+        return true
     end
-    seen[tbl] = true
+    -- Standard Blox Fruits physical/perm keys often look like "Phoenix-Phoenix" or "Permanent Phoenix-Phoenix"
+    if idStr:find("-", 1, true) or storageKey:find("-", 1, true) or dispName:find("fruit", 1, true) then
+        return true
+    end
+    return false
+end
 
-    local itemId = extractField(tbl, "ItemId") or extractField(tbl, "Id")
-    local display = extractField(tbl, "Display")
-    local index = extractField(tbl, "Index")
+local function collectCandidateIds()
+    local seen = {}
+    local ids = {}
 
-    local displayName = extractField(display, "Name") or extractField(tbl, "DisplayName") or extractField(tbl, "Name")
-    local storageKey = extractField(index, "StorageKey") or extractField(tbl, "StorageKey")
-
-    if itemId and (displayName or storageKey) then
-        local itemType = extractField(tbl, "Type") or extractField(index, "Type") or extractField(tbl, "Category")
-        local isTradable = extractField(tbl, "Tradable")
-        if isTradable == nil then
-            isTradable = extractField(index, "Tradable")
+    local function pushId(v)
+        if v == nil then return end
+        local key = tostring(v)
+        if not seen[key] then
+            seen[key] = true
+            table.insert(ids, v)
         end
-
-        table.insert(results, {
-            ItemId = itemId,
-            DisplayName = tostring(displayName or ""),
-            StorageKey = tostring(storageKey or ""),
-            Type = tostring(itemType or "Unknown"),
-            Tradable = isTradable,
-            IsPerm = extractField(tbl, "IsPerm") or extractField(index, "IsPerm") or false,
-            GamepassId = extractField(tbl, "GamepassId") or extractField(tbl, "ProductId")
-        })
     end
 
-    for _, v in next, tbl do
+    -- Scan known ItemConfig tables/methods if present
+    for k, v in pairs(ItemConfig) do
         if type(v) == "table" then
-            scanTable(v, depth + 1)
+            for subK, subV in pairs(v) do
+                if type(subV) == "table" and subV.ItemId ~= nil then
+                    pushId(subV.ItemId)
+                elseif type(subV) == "table" and subV.Display then
+                    pushId(subK)
+                end
+            end
         end
     end
-end
 
-for _, inst in ipairs(ReplicatedStorage:GetDescendants()) do
-    if inst:IsA("ModuleScript") then
-        local ok, mod = pcall(require, inst)
-        if ok and type(mod) == "table" then
-            scanTable(mod, 0)
+    -- Also check any keys in ItemReplicationService if exposed
+    if type(ItemReplicationService.GetAllItems) == "function" then
+        local ok, all = pcall(function() return ItemReplicationService:GetAllItems() end)
+        if ok and type(all) == "table" then
+            for _, entry in pairs(all) do
+                if type(entry) == "table" and entry.ItemId ~= nil then
+                    pushId(entry.ItemId)
+                end
+            end
         end
     end
+
+    return ids
 end
 
-if #results == 0 and getgc then
-    for _, obj in ipairs(getgc(true)) do
-        if type(obj) == "table" then
-            scanTable(obj, 0)
+local function dumpUnownedFruits()
+    local results = {}
+    local candidateIds = collectCandidateIds()
+
+    for _, id in ipairs(candidateIds) do
+        local ok, cfg = pcall(function()
+            return ItemConfig.tryGet(id)
+        end)
+        if ok and type(cfg) == "table" and isFruitEntry(id, cfg) then
+            if not isOwned(id) then
+                local displayName = (cfg.Display and cfg.Display.Name) or "N/A"
+                local storageKey = (cfg.Index and cfg.Index.StorageKey) or "N/A"
+                table.insert(results, {
+                    ItemId = tostring(id),
+                    DisplayName = tostring(displayName),
+                    StorageKey = tostring(storageKey)
+                })
+            end
         end
     end
+
+    table.sort(results, function(a, b)
+        return a.DisplayName:lower() < b.DisplayName:lower()
+    end)
+
+    return results
 end
 
-table.sort(results, function(a, b)
-    return tostring(a.ItemId) < tostring(b.ItemId)
-end)
-
-local jsonPayload = HttpService:JSONEncode(results)
-
--- GUI setup
-local guiParent = (gethui and gethui()) or CoreGui
-local oldGui = guiParent:FindFirstChild("BFItemDumperGui")
-if oldGui then oldGui:Destroy() end
-
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "BFItemDumperGui"
-screenGui.ResetOnSpawn = false
-local okParent = pcall(function() screenGui.Parent = guiParent end)
-if not okParent then
-    screenGui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
-end
-
-local frame = Instance.new("Frame")
-frame.Name = "Main"
-frame.Size = UDim2.new(0, 520, 0, 380)
-frame.Position = UDim2.new(0.5, -260, 0.5, -190)
-frame.BackgroundColor3 = Color3.fromRGB(22, 24, 29)
-frame.BorderSizePixel = 0
-frame.Active = true
-frame.Draggable = true
-frame.Parent = screenGui
-
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 6)
-corner.Parent = frame
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -40, 0, 34)
-title.Position = UDim2.new(0, 12, 0, 0)
-title.BackgroundTransparency = 1
-title.Text = string.format("Item Registry Dump (%d entries)", #results)
-title.TextColor3 = Color3.fromRGB(235, 238, 245)
-title.Font = Enum.Font.Code
-title.TextSize = 14
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Parent = frame
-
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 28, 0, 28)
-closeBtn.Position = UDim2.new(1, -32, 0, 3)
-closeBtn.BackgroundColor3 = Color3.fromRGB(45, 48, 56)
-closeBtn.Text = "X"
-closeBtn.TextColor3 = Color3.fromRGB(220, 90, 90)
-closeBtn.Font = Enum.Font.Code
-closeBtn.TextSize = 14
-closeBtn.Parent = frame
-Instance.new("UICorner", closeBtn).CornerRadius = UDim.new(0, 4)
-closeBtn.MouseButton1Click:Connect(function()
-    screenGui:Destroy()
-end)
-
-local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1, -24, 1, -86)
-scroll.Position = UDim2.new(0, 12, 0, 38)
-scroll.BackgroundColor3 = Color3.fromRGB(15, 16, 20)
-scroll.BorderSizePixel = 0
-scroll.ScrollBarThickness = 6
-scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-scroll.Parent = frame
-Instance.new("UICorner", scroll).CornerRadius = UDim.new(0, 4)
-
-local listLayout = Instance.new("UIListLayout")
-listLayout.Padding = UDim.new(0, 2)
-listLayout.Parent = scroll
-
-for i = 1, math.min(#results, 300) do
-    local item = results[i]
-    local row = Instance.new("TextLabel")
-    row.Size = UDim2.new(1, -10, 0, 20)
-    row.BackgroundTransparency = 1
-    row.Text = string.format("[%s] %s | Key: %s | Type: %s",
-        tostring(item.ItemId),
-        item.DisplayName,
-        item.StorageKey,
-        item.Type
-    )
-    row.TextColor3 = Color3.fromRGB(190, 200, 215)
-    row.Font = Enum.Font.Code
-    row.TextSize = 12
-    row.TextXAlignment = Enum.TextXAlignment.Left
-    row.TextTruncate = Enum.TextTruncate.AtEnd
-    row.Parent = scroll
-end
-
-local copyJsonBtn = Instance.new("TextButton")
-copyJsonBtn.Size = UDim2.new(0.48, 0, 0, 32)
-copyJsonBtn.Position = UDim2.new(0, 12, 1, -40)
-copyJsonBtn.BackgroundColor3 = Color3.fromRGB(46, 125, 80)
-copyJsonBtn.Text = "Copy All (JSON)"
-copyJsonBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-copyJsonBtn.Font = Enum.Font.Code
-copyJsonBtn.TextSize = 13
-copyJsonBtn.Parent = frame
-Instance.new("UICorner", copyJsonBtn).CornerRadius = UDim.new(0, 4)
-
-local copyLuaBtn = Instance.new("TextButton")
-copyLuaBtn.Size = UDim2.new(0.48, 0, 0, 32)
-copyLuaBtn.Position = UDim2.new(0.52, -12, 1, -40)
-copyLuaBtn.BackgroundColor3 = Color3.fromRGB(58, 95, 160)
-copyLuaBtn.Text = "Copy All (Lua Table)"
-copyLuaBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-copyLuaBtn.Font = Enum.Font.Code
-copyLuaBtn.TextSize = 13
-copyLuaBtn.Parent = frame
-Instance.new("UICorner", copyLuaBtn).CornerRadius = UDim2.new(0, 4)
-
-local function buildLuaTable()
-    local lines = { "local ItemRegistry = {" }
-    for _, item in ipairs(results) do
-        table.insert(lines, string.format(
-            '    { ItemId = %q, Name = %q, StorageKey = %q, Type = %q },',
-            tostring(item.ItemId),
-            item.DisplayName,
-            item.StorageKey,
-            item.Type
-        ))
+local function formatDump(rows)
+    local lines = {}
+    for _, r in ipairs(rows) do
+        table.insert(lines, string.format('ItemId: %s | Display.Name: %s | Index.StorageKey: %s', r.ItemId, r.DisplayName, r.StorageKey))
     end
-    table.insert(lines, "}")
     return table.concat(lines, "\n")
 end
 
-copyJsonBtn.MouseButton1Click:Connect(function()
-    if setclipboard then
-        setclipboard(jsonPayload)
-        copyJsonBtn.Text = "Copied JSON!"
-        task.delay(1.5, function() copyJsonBtn.Text = "Copy All (JSON)" end)
-    else
-        copyJsonBtn.Text = "No setclipboard"
+local function copyText(str)
+    if type(setclipboard) == "function" then
+        setclipboard(str)
+        return true
+    elseif type(toclipboard) == "function" then
+        toclipboard(str)
+        return true
     end
-end)
+    return false
+end
 
-copyLuaBtn.MouseButton1Click:Connect(function()
-    if setclipboard then
-        setclipboard(buildLuaTable())
-        copyLuaBtn.Text = "Copied Lua!"
-        task.delay(1.5, function() copyLuaBtn.Text = "Copy All (Lua Table)" end)
-    else
-        copyLuaBtn.Text = "No setclipboard"
+local function buildGui()
+    local parentGui = (gethui and gethui()) or CoreGui or LocalPlayer:WaitForChild("PlayerGui")
+    local existing = parentGui:FindFirstChild("UnownedFruitDumperGui")
+    if existing then existing:Destroy() end
+
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "UnownedFruitDumperGui"
+    gui.ResetOnSpawn = false
+    gui.Parent = parentGui
+
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.fromOffset(540, 340)
+    frame.Position = UDim2.fromOffset(80, 80)
+    frame.BackgroundColor3 = Color3.fromRGB(22, 24, 28)
+    frame.BorderSizePixel = 0
+    frame.Active = true
+    frame.Draggable = true
+    frame.Parent = gui
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(1, -20, 0, 28)
+    title.Position = UDim2.fromOffset(10, 8)
+    title.BackgroundTransparency = 1
+    title.TextColor3 = Color3.fromRGB(240, 244, 248)
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Font = Enum.Enum.Font.Code
+    title.TextSize = 14
+    title.Text = "Unowned Fruits Dumper"
+    title.Parent = frame
+
+    local refreshBtn = Instance.new("TextButton")
+    refreshBtn.Size = UDim2.fromOffset(90, 28)
+    refreshBtn.Position = UDim2.fromOffset(10, 42)
+    refreshBtn.BackgroundColor3 = Color3.fromRGB(45, 52, 64)
+    refreshBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    refreshBtn.Font = Enum.Enum.Font.Code
+    refreshBtn.TextSize = 13
+    refreshBtn.Text = "Refresh"
+    refreshBtn.Parent = frame
+
+    local copyBtn = Instance.new("TextButton")
+    copyBtn.Size = UDim2.fromOffset(110, 28)
+    copyBtn.Position = UDim2.fromOffset(108, 42)
+    copyBtn.BackgroundColor3 = Color3.fromRGB(38, 110, 82)
+    copyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    copyBtn.Font = Enum.Enum.Font.Code
+    copyBtn.TextSize = 13
+    copyBtn.Text = "Copy All"
+    copyBtn.Parent = frame
+
+    local countLabel = Instance.new("TextLabel")
+    countLabel.Size = UDim2.new(1, -236, 0, 28)
+    countLabel.Position = UDim2.fromOffset(226, 42)
+    countLabel.BackgroundTransparency = 1
+    countLabel.TextColor3 = Color3.fromRGB(170, 180, 195)
+    countLabel.TextXAlignment = Enum.TextXAlignment.Right
+    countLabel.Font = Enum.Enum.Font.Code
+    countLabel.TextSize = 12
+    countLabel.Text = "0 items"
+    countLabel.Parent = frame
+
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Size = UDim2.new(1, -20, 1, -86)
+    scroll.Position = UDim2.fromOffset(10, 78)
+    scroll.BackgroundColor3 = Color3.fromRGB(15, 17, 20)
+    scroll.BorderSizePixel = 0
+    scroll.ScrollBarThickness = 6
+    scroll.Parent = frame
+
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(1, -12, 0, 2000)
+    box.Position = UDim2.fromOffset(6, 4)
+    box.BackgroundTransparency = 1
+    box.ClearTextOnFocus = false
+    box.MultiLine = true
+    box.TextEditable = false
+    box.TextXAlignment = Enum.TextXAlignment.Left
+    box.TextYAlignment = Enum.TextYAlignment.Top
+    box.TextWrapped = false
+    box.Font = Enum.Enum.Font.Code
+    box.TextSize = 12
+    box.TextColor3 = Color3.fromRGB(215, 225, 235)
+    box.Text = ""
+    box.Parent = scroll
+
+    local currentFormatted = ""
+
+    local function reload()
+        local rows = dumpUnownedFruits()
+        currentFormatted = formatDump(rows)
+        box.Text = currentFormatted
+        countLabel.Text = tostring(#rows) .. " unowned"
+        local lineCount = math.max(#rows, 1)
+        local heightPx = lineCount * 16 + 16
+        box.Size = UDim2.new(1, -12, 0, heightPx)
+        scroll.CanvasSize = UDim2.fromOffset(0, heightPx)
     end
-end)
+
+    refreshBtn.MouseButton1Click:Connect(reload)
+    copyBtn.MouseButton1Click:Connect(function()
+        if copyText(currentFormatted) then
+            copyBtn.Text = "Copied!"
+            task.delay(1.2, function()
+                if copyBtn then copyBtn.Text = "Copy All" end
+            end)
+        else
+            copyBtn.Text = "No Clipboard"
+        end
+    end)
+
+    reload()
+end
+
+buildGui()
