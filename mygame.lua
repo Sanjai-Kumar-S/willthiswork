@@ -5,19 +5,19 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextChatService = game:GetService("TextChatService")
 
 local LocalPlayer = Players.LocalPlayer
-local Remotes = ReplicatedStorage:WaitForChild("Remotes")
-local TradeFunction = Remotes:WaitForChild("TradeFunction")
-local CommF_ = Remotes:WaitForChild("CommF_")
+local TradeFunction = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("TradeFunction")
 
 local ItemReplicationService = require(ReplicatedStorage:WaitForChild("ItemReplicationService"))
 local KEYS = require(ReplicatedStorage.ItemReplicationService:WaitForChild("KEYS"))
 local ItemConfig = require(ReplicatedStorage:WaitForChild("ItemConfig"))
 
--- Disconnect previous instance on re-execute
-if _G.TradeAddListener then
-    pcall(function() _G.TradeAddListener:Disconnect() end)
-    _G.TradeAddListener = nil
+-- Clean up old connections on re-execute
+if _G.TradeConnections then
+    for _, conn in ipairs(_G.TradeConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
 end
+_G.TradeConnections = {}
 
 local COMMAND_PREFIX = "!add "
 
@@ -123,6 +123,34 @@ local function resolveItemKey(userInput)
     return MasterItemDictionary[query] or query
 end
 
+local function collectAllOwnedItems()
+    local results = {}
+    local seenIds = {}
+
+    -- Physical fruits & stackables live in KEYS.COUNT; skins, perms & passes live in KEYS.IS_OWNED
+    local targetKeys = { KEYS.COUNT, KEYS.IS_OWNED }
+    for _, keyType in ipairs(targetKeys) do
+        if keyType ~= nil then
+            local ok, bucket = pcall(function()
+                return ItemReplicationService:GetItems(keyType)
+            end)
+            if ok and type(bucket) == "table" then
+                for _, item in pairs(bucket) do
+                    if type(item) == "table" and item.ItemId and not seenIds[item.ItemId] then
+                        local owned = (item.Value == true) or (type(item.Value) == "number" and item.Value > 0)
+                        if owned then
+                            seenIds[item.ItemId] = true
+                            table.insert(results, item)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return results
+end
+
 local function findItemId(targetName)
     local resolvedQuery = resolveItemKey(targetName)
     if not resolvedQuery then return nil end
@@ -131,80 +159,57 @@ local function findItemId(targetName)
     local hyphenForm = queryLower .. "-" .. queryLower
     local isPermQuery = queryLower:sub(1, 10) == "permanent "
 
-    -- 1. Primary lookup: KEYS.IS_OWNED (handles skins, perms, gamepasses, and replicated fruits)
-    local ownedItems = ItemReplicationService:GetItems(KEYS.IS_OWNED)
-    if type(ownedItems) == "table" then
-        for _, item in pairs(ownedItems) do
-            if (item.Value == true or (type(item.Value) == "number" and item.Value > 0)) and item.ItemId then
-                local ok, cfg = pcall(function()
-                    return ItemConfig.tryGet(item.ItemId)
-                end)
+    local ownedItems = collectAllOwnedItems()
+    local partialId, partialName = nil, nil
 
-                if ok and type(cfg) == "table" and cfg.Display then
-                    local displayName = (cfg.Display.Name or ""):lower()
-                    local storageKey = (cfg.Index and cfg.Index.StorageKey or ""):lower()
-                    local itemIdLower = tostring(item.ItemId):lower()
+    for _, item in ipairs(ownedItems) do
+        local ok, cfg = pcall(ItemConfig.tryGet, item.ItemId)
+        if ok and type(cfg) == "table" and cfg.Display then
+            local displayName = (cfg.Display.Name or ""):lower()
+            local storageKey = (cfg.Index and cfg.Index.StorageKey or ""):lower()
+            local itemIdLower = tostring(item.ItemId):lower()
 
-                    local itemIsPerm = displayName:find("permanent", 1, true) ~= nil
-                    if isPermQuery == itemIsPerm then
-                        if displayName == queryLower
-                            or storageKey == queryLower
-                            or storageKey == hyphenForm
-                            or itemIdLower == queryLower
-                            or displayName:find(queryLower, 1, true)
-                            or storageKey:find(queryLower, 1, true)
-                        then
-                            return item.ItemId, cfg.Display.Name or resolvedQuery
-                        end
-                    end
+            local itemIsPerm = displayName:find("permanent", 1, true) ~= nil
+            if isPermQuery == itemIsPerm then
+                -- Exact match first (prevents "bomb" from matching "celebration bomb")
+                if displayName == queryLower
+                    or storageKey == queryLower
+                    or storageKey == hyphenForm
+                    or itemIdLower == queryLower
+                then
+                    return item.ItemId, cfg.Display.Name or resolvedQuery
+                end
+
+                -- Substring fallback
+                if not partialId and (displayName:find(queryLower, 1, true) or storageKey:find(queryLower, 1, true)) then
+                    partialId = item.ItemId
+                    partialName = cfg.Display.Name or resolvedQuery
                 end
             end
         end
     end
 
-    -- 2. Fallback lookup: CommF_ getInventory (handles physical fruits like Venom-Venom)
-    if not isPermQuery then
-        local ok, inv = pcall(function()
-            return CommF_:InvokeServer("getInventory")
-        end)
-        if ok and type(inv) == "table" then
-            for _, entry in ipairs(inv) do
-                if type(entry) == "table" and entry.Name then
-                    local nameLower = entry.Name:lower()
-                    if nameLower == queryLower
-                        or nameLower == hyphenForm
-                        or nameLower:find(queryLower, 1, true)
-                    then
-                        return entry.Name, entry.Name
-                    end
-                end
-            end
-        end
-    end
-
-    return nil
+    return partialId, partialName
 end
 
--- Deduplicate by MessageId + 0.5s cooldown so it fires once on whichever Status arrives first
-local seenMessages = {}
-local lastTime = 0
+-- Simple time-based lock: guarantees 1 execution per command regardless of how many chat events fire
+local lastExecTime = 0
+local lastExecText = ""
 
-local function handleChatCommand(rawText, messageId)
+local function handleChatCommand(rawText)
     if type(rawText) ~= "string" then return end
 
-    local lowerText = rawText:lower()
+    local lowerText = rawText:lower():match("^%s*(.-)%s*$")
     if lowerText:sub(1, #COMMAND_PREFIX) ~= COMMAND_PREFIX then return end
 
-    if messageId then
-        if seenMessages[messageId] then return end
-        seenMessages[messageId] = true
-    else
-        local now = os.clock()
-        if now - lastTime < 0.5 then return end
-        lastTime = now
+    local now = os.clock()
+    if lowerText == lastExecText and (now - lastExecTime) < 1.0 then
+        return
     end
+    lastExecTime = now
+    lastExecText = lowerText
 
-    local targetInput = rawText:sub(#COMMAND_PREFIX + 1)
+    local targetInput = rawText:match("^%s*(.-)%s*$"):sub(#COMMAND_PREFIX + 1)
     local itemId, resolvedName = findItemId(targetInput)
 
     if itemId then
@@ -217,20 +222,19 @@ local function handleChatCommand(rawText, messageId)
             warn("[Trade] InvokeServer failed:", err)
         end
     else
-        warn("[Trade] Item not found in inventory:", targetInput, "(Resolved:", tostring(resolveItemKey(targetInput)) .. ")")
+        warn("[Trade] Not found:", targetInput, "| Resolved:", tostring(resolveItemKey(targetInput)))
     end
 end
 
-if TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
-    _G.TradeAddListener = TextChatService.MessageReceived:Connect(function(textChatMessage)
-        if textChatMessage.TextSource and textChatMessage.TextSource.UserId == LocalPlayer.UserId then
-            handleChatCommand(textChatMessage.Text, textChatMessage.MessageId)
+-- Hook both chat systems safely; the 1.0s debounce prevents double-firing
+table.insert(_G.TradeConnections, LocalPlayer.Chatted:Connect(handleChatCommand))
+
+if TextChatService then
+    table.insert(_G.TradeConnections, TextChatService.MessageReceived:Connect(function(msg)
+        if msg.TextSource and msg.TextSource.UserId == LocalPlayer.UserId then
+            handleChatCommand(msg.Text)
         end
-    end)
-else
-    _G.TradeAddListener = LocalPlayer.Chatted:Connect(function(msg)
-        handleChatCommand(msg, nil)
-    end)
+    end))
 end
 
-print("[Trade] Chat listener active. Type '!add <item>' while seated at a trade table.")
+print("[Trade] Active! Type '!add <item>' at a trade table.")
