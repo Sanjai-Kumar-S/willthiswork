@@ -5,8 +5,6 @@ local Players = game:GetService("Players")
 local player = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait() and Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-print("[Viewer] Step 1: PlayerGui found")
-
 local existing = playerGui:FindFirstChild("SimpleOutputGui")
 if existing then
 	existing:Destroy()
@@ -67,7 +65,7 @@ local textBox = Instance.new("TextBox")
 textBox.Size = UDim2.new(1, -16, 1, -48)
 textBox.Position = UDim2.fromOffset(8, 42)
 textBox.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
-textBox.Text = "Waiting for response..."
+textBox.Text = "Requesting..."
 textBox.TextColor3 = Color3.fromRGB(230, 230, 235)
 textBox.TextSize = 13
 textBox.Font = Enum.Font.Code
@@ -77,8 +75,6 @@ textBox.TextXAlignment = Enum.TextXAlignment.Left
 textBox.TextYAlignment = Enum.TextYAlignment.Top
 textBox.TextWrapped = true
 textBox.Parent = mainFrame
-
-print("[Viewer] Step 2: GUI rendered in PlayerGui")
 
 local rawPayload = ""
 
@@ -102,21 +98,45 @@ closeButton.MouseButton1Click:Connect(function()
 	screenGui:Destroy()
 end)
 
-local ok, res = pcall(function()
-	return game:HttpGet(TARGET_URL)
-end)
+task.spawn(function()
+	local ok, res = pcall(function()
+		return game:HttpGet(TARGET_URL)
+	end)
 
-if not ok then
-	local req = request or http_request or (syn and syn.request) or (http and http.request)
-	if type(req) == "function" then
-		ok, res = pcall(function()
-			local r = req({ Url = TARGET_URL, Method = "GET" })
-			return r and r.Body or tostring(r)
-		end)
+	local methodUsed = "HttpGet"
+	if not ok or res == nil or tostring(res) == "" then
+		local req = request or http_request or (syn and syn.request) or (http and http.request)
+		if type(req) == "function" then
+			local rOk, rRes = pcall(function()
+				return req({ Url = TARGET_URL, Method = "GET" })
+			end)
+			if rOk and type(rRes) == "table" then
+				ok = true
+				methodUsed = "request (Status " .. tostring(rRes.StatusCode) .. ")"
+				res = rRes.Body
+			elseif not ok then
+				ok = rOk
+				res = rRes
+			end
+		end
 	end
-end
 
-rawPayload = tostring(res or "Empty response")
-titleLabel.Text = ok and ("Done (" .. #rawPayload .. " chars)") or "Fetch Error"
-textBox.Text = rawPayload:sub(1, 15000)
-print("[Viewer] Step 3: Fetch complete, length =", #rawPayload)
+	local str = tostring(res or "")
+	-- Strip null bytes so TextBox doesn't choke on \0
+	local cleaned = str:gsub("%z", "\\0")
+	rawPayload = str
+
+	if type(writefile) == "function" then
+		pcall(writefile, "fe4r_raw_dump.txt", str)
+	end
+
+	titleLabel.Text = string.format("%s | Len: %d", methodUsed, #str)
+
+	if #cleaned == 0 then
+		textBox.Text = "[Response was empty / 0 bytes]"
+	else
+		textBox.Text = cleaned:sub(1, 15000)
+	end
+
+	print("[Viewer] Method:", methodUsed, "| ok:", ok, "| type:", type(res), "| len:", #str)
+end)
