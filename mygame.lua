@@ -2,12 +2,16 @@ getgenv().ID = "6ad72f08-3b2b-4c4b-8eef-95a9b10cffef"
 local STAGE1_URL = "https://api.fe4r.click/s/loader_bloxfruits.luau"
 
 local Players = game:GetService("Players")
-local player = Players.LocalPlayer or Players:GetPropertyChangedSignal("LocalPlayer"):Wait() and Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+local player = Players.LocalPlayer
+if not player then
+	Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+	player = Players.LocalPlayer
+end
 
-local existing = playerGui:FindFirstChild("SimpleOutputGui")
-if existing then
-	existing:Destroy()
+local playerGui = player:WaitForChild("PlayerGui")
+local oldGui = playerGui:FindFirstChild("SimpleOutputGui")
+if oldGui then
+	oldGui:Destroy()
 end
 
 local screenGui = Instance.new("ScreenGui")
@@ -34,7 +38,7 @@ local titleLabel = Instance.new("TextLabel")
 titleLabel.Size = UDim2.new(1, -160, 1, 0)
 titleLabel.Position = UDim2.fromOffset(10, 0)
 titleLabel.BackgroundTransparency = 1
-titleLabel.Text = "Running single-pass capture..."
+titleLabel.Text = "Running..."
 titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 titleLabel.TextSize = 14
 titleLabel.Font = Enum.Font.SourceSansBold
@@ -61,36 +65,50 @@ closeButton.TextSize = 13
 closeButton.Font = Enum.Font.SourceSansBold
 closeButton.Parent = topBar
 
-local textBox = Instance.new("TextBox")
-textBox.Size = UDim2.new(1, -16, 1, -48)
-textBox.Position = UDim2.fromOffset(8, 42)
-textBox.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
-textBox.Text = "Fetching stage 1..."
-textBox.TextColor3 = Color3.fromRGB(230, 230, 235)
-textBox.TextSize = 13
-textBox.Font = Enum.Font.Code
-textBox.MultiLine = true
-textBox.ClearTextOnFocus = false
-textBox.TextXAlignment = Enum.TextXAlignment.Left
-textBox.TextYAlignment = Enum.TextYAlignment.Top
-textBox.TextWrapped = true
-textBox.Parent = mainFrame
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, -16, 1, -48)
+scroll.Position = UDim2.fromOffset(8, 42)
+scroll.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
+scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 6
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.Parent = mainFrame
 
-local allOutput = ""
+local outLabel = Instance.new("TextLabel")
+outLabel.Size = UDim2.new(1, -12, 0, 0)
+outLabel.Position = UDim2.fromOffset(6, 4)
+outLabel.AutomaticSize = Enum.AutomaticSize.Y
+outLabel.BackgroundTransparency = 1
+outLabel.Text = "Starting fetch..."
+outLabel.TextColor3 = Color3.fromRGB(230, 230, 235)
+outLabel.TextSize = 13
+outLabel.Font = Enum.Font.Code
+outLabel.TextXAlignment = Enum.TextXAlignment.Left
+outLabel.TextYAlignment = Enum.TextYAlignment.Top
+outLabel.TextWrapped = true
+outLabel.Parent = scroll
+
+local fullText = ""
+
+local function showText(status, body)
+	fullText = tostring(body or "")
+	titleLabel.Text = tostring(status)
+	local safe = fullText:gsub("%z", "\\0")
+	if #safe > 15000 then
+		outLabel.Text = safe:sub(1, 15000) .. "\n\n[Truncated preview — Copy All gets full text]"
+	else
+		outLabel.Text = safe
+	end
+end
 
 copyButton.MouseButton1Click:Connect(function()
-	local content = allOutput ~= "" and allOutput or textBox.Text
-	if type(setclipboard) == "function" then
-		setclipboard(content)
-		copyButton.Text = "Copied!"
-	elseif type(toclipboard) == "function" then
-		toclipboard(content)
-		copyButton.Text = "Copied!"
+	local clipFn = setclipboard or toclipboard or toClipboard
+	if type(clipFn) == "function" then
+		local ok = pcall(clipFn, fullText)
+		copyButton.Text = ok and "Copied!" or "Copy Err"
 	else
-		textBox:CaptureFocus()
-		textBox.SelectionStart = 1
-		textBox.CursorPosition = #textBox.Text + 1
-		copyButton.Text = "Selected"
+		copyButton.Text = "No Clip API"
 	end
 	task.delay(1.2, function()
 		if copyButton and copyButton.Parent then
@@ -104,44 +122,36 @@ closeButton.MouseButton1Click:Connect(function()
 end)
 
 task.spawn(function()
+	print("[Capture] Fetching stage 1...")
 	local ok1, s1 = pcall(function()
 		return game:HttpGet(STAGE1_URL)
 	end)
+	print("[Capture] Stage 1 ok:", ok1, "len:", #tostring(s1))
+
+	if not ok1 then
+		showText("Stage 1 Failed", "Error: " .. tostring(s1))
+		return
+	end
 
 	local s1Str = tostring(s1 or "")
-	if not ok1 or s1Str == "" then
-		allOutput = "=== STAGE 1 FAILED ===\n" .. s1Str
-		titleLabel.Text = "Stage 1 Error"
-		textBox.Text = allOutput:gsub("%z", "\\0"):sub(1, 15000)
-		return
-	end
-
 	local coreUrl = s1Str:match("https://api%.fe4r%.click/core%?t=[%w%-_]+")
 	if not coreUrl then
-		allOutput = "=== STAGE 1 (NO CORE URL FOUND) ===\n" .. s1Str
-		titleLabel.Text = "Stage 1 Done (No Core URL)"
-		textBox.Text = allOutput:gsub("%z", "\\0"):sub(1, 15000)
-		if type(writefile) == "function" then
-			pcall(writefile, "fe4r_capture_all.txt", allOutput)
-		end
+		showText("No Core URL", s1Str)
 		return
 	end
 
-	titleLabel.Text = "Fetching fresh core..."
+	print("[Capture] Fetching stage 2:", coreUrl)
 	local ok2, s2 = pcall(function()
 		return game:HttpGet(coreUrl)
 	end)
+	print("[Capture] Stage 2 ok:", ok2, "len:", #tostring(s2))
 
 	local s2Str = tostring(s2 or "")
-	allOutput = string.format(
-		"=== STAGE 1 (%d chars) ===\n%s\n\n=== CORE URL ===\n%s\n\n=== STAGE 2 (ok=%s, %d chars) ===\n%s",
-		#s1Str, s1Str, coreUrl, tostring(ok2), #s2Str, s2Str
-	)
+	local combined = "=== STAGE 1 ===\n" .. s1Str .. "\n\n=== STAGE 2 ===\n" .. s2Str
 
 	if type(writefile) == "function" then
-		pcall(writefile, "fe4r_capture_all.txt", allOutput)
+		pcall(writefile, "fe4r_capture_all.txt", combined)
 	end
 
-	titleLabel.Text = string.format("Done | S1:%d S2:%d", #s1Str, #s2Str)
-	textBox.Text = allOutput:gsub("%z", "\\0"):sub(1, 15000)
+	showText(ok2 and "Stage 2 Done" or "Stage 2 Failed", combined)
 end)
