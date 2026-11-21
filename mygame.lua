@@ -10,13 +10,15 @@ local ItemReplicationService = require(ReplicatedStorage:WaitForChild("ItemRepli
 local KEYS = require(ReplicatedStorage.ItemReplicationService:WaitForChild("KEYS"))
 local ItemConfig = require(ReplicatedStorage:WaitForChild("ItemConfig"))
 
-local requestFunc = (syn and syn.request)
-    or (http and http.request)
-    or http_request
-    or (fluxus and fluxus.request)
-    or request
+local function getRequestFunc()
+    if type(request) == "function" then return request end
+    if type(http_request) == "function" then return http_request end
+    if type(http) == "table" and type(http.request) == "function" then return http.request end
+    if type(syn) == "table" and type(syn.request) == "function" then return syn.request end
+    if type(fluxus) == "table" and type(fluxus.request) == "function" then return fluxus.request end
+    return nil
+end
 
--- Check all KEYS in ItemReplicationService (e.g., IS_OWNED, IS_TRADABLE, COUNT, etc.)
 local function buildReplicationLookup()
     local lookup = {}
     for keyName, keyVal in pairs(KEYS) do
@@ -36,7 +38,6 @@ local function buildReplicationLookup()
     return lookup
 end
 
--- Recursively inspect ItemConfig entry for Category, Tradable flags, and internal tags
 local function inspectConfig(cfg)
     local info = {
         Category = "nil",
@@ -120,44 +121,39 @@ local function dumpAllRegistry()
 end
 
 local function sendTxtToDiscord(fileContent, totalCount)
-    if not requestFunc then
-        return false, "Executor missing HTTP request function"
-    end
-    if WEBHOOK_URL == "" or WEBHOOK_URL == "YOUR_DISCORD_WEBHOOK_URL" then
-        return false, "Set WEBHOOK_URL first"
+    local req = getRequestFunc()
+    if not req then
+        return false, "No HTTP request() in executor"
     end
 
-    local boundary = "----RobloxDumperBoundary" .. tostring(math.random(100000, 999999))
+    local boundary = "------------------------" .. HttpService:GenerateGUID(false):gsub("%-", "")
     local fileName = string.format("bf_item_dump_%s_%d.txt", LocalPlayer.Name, os.time())
 
     local payloadJson = HttpService:JSONEncode({
-        username = "BF Registry Dumper",
         content = string.format(
-            "📦 **Blox Fruits ItemConfig Dump** (`%s`)\nTotal Entries: **%d**",
+            "📦 **Blox Fruits ItemConfig Dump** (`%s`) — **%d** items",
             LocalPlayer.Name,
             totalCount
         )
     })
 
-    local bodyParts = {
+    local body = table.concat({
         "--" .. boundary,
         'Content-Disposition: form-data; name="payload_json"',
         "Content-Type: application/json",
         "",
         payloadJson,
         "--" .. boundary,
-        string.format('Content-Disposition: form-data; name="files[0]"; filename="%s"', fileName),
-        "Content-Type: text/plain; charset=utf-8",
+        string.format('Content-Disposition: form-data; name="file"; filename="%s"', fileName),
+        "Content-Type: text/plain",
         "",
         fileContent,
         "--" .. boundary .. "--",
         ""
-    }
-
-    local body = table.concat(bodyParts, "\r\n")
+    }, "\r\n")
 
     local ok, res = pcall(function()
-        return requestFunc({
+        return req({
             Url = WEBHOOK_URL,
             Method = "POST",
             Headers = {
@@ -167,13 +163,18 @@ local function sendTxtToDiscord(fileContent, totalCount)
         })
     end)
 
-    if not ok or not res then
-        return false, "HTTP call failed"
+    if not ok then
+        return false, "Err: " .. tostring(res):sub(1, 60)
     end
-    if res.StatusCode >= 200 and res.StatusCode < 300 then
-        return true, "Sent .txt (" .. tostring(res.StatusCode) .. ")"
+    if type(res) ~= "table" then
+        return false, "Empty response"
     end
-    return false, "HTTP " .. tostring(res.StatusCode) .. ": " .. tostring(res.Body):sub(1, 80)
+
+    local code = tonumber(res.StatusCode) or 0
+    if code >= 200 and code < 300 then
+        return true, "Discord OK (" .. tostring(code) .. ")"
+    end
+    return false, "HTTP " .. tostring(code) .. " " .. tostring(res.Body or ""):sub(1, 50)
 end
 
 local function copyText(str)
@@ -198,7 +199,7 @@ local function buildGui()
     gui.Parent = parentGui
 
     local frame = Instance.new("Frame")
-    frame.Size = UDim2.fromOffset(780, 430)
+    frame.Size = UDim2.fromOffset(780, 450)
     frame.Position = UDim2.fromOffset(60, 60)
     frame.BackgroundColor3 = Color3.fromRGB(22, 24, 28)
     frame.BorderSizePixel = 0
@@ -207,19 +208,30 @@ local function buildGui()
     frame.Parent = gui
 
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -20, 0, 28)
-    title.Position = UDim2.fromOffset(10, 8)
+    title.Size = UDim2.new(1, -20, 0, 24)
+    title.Position = UDim2.fromOffset(10, 6)
     title.BackgroundTransparency = 1
     title.TextColor3 = Color3.fromRGB(240, 244, 248)
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Font = Enum.Enum.Font.Code
     title.TextSize = 14
-    title.Text = "Full ItemConfig + Tradable Dumper (Auto Discord .txt)"
+    title.Text = "Full ItemConfig + Tradable Dumper"
     title.Parent = frame
 
+    local webhookStatus = Instance.new("TextLabel")
+    webhookStatus.Size = UDim2.new(1, -20, 0, 20)
+    webhookStatus.Position = UDim2.fromOffset(10, 30)
+    webhookStatus.BackgroundTransparency = 1
+    webhookStatus.TextColor3 = Color3.fromRGB(255, 210, 100)
+    webhookStatus.TextXAlignment = Enum.TextXAlignment.Left
+    webhookStatus.Font = Enum.Enum.Font.Code
+    webhookStatus.TextSize = 12
+    webhookStatus.Text = "Status: Initializing..."
+    webhookStatus.Parent = frame
+
     local searchBox = Instance.new("TextBox")
-    searchBox.Size = UDim2.fromOffset(210, 28)
-    searchBox.Position = UDim2.fromOffset(10, 42)
+    searchBox.Size = UDim2.fromOffset(220, 28)
+    searchBox.Position = UDim2.fromOffset(10, 54)
     searchBox.BackgroundColor3 = Color3.fromRGB(32, 36, 44)
     searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
     searchBox.PlaceholderText = "Filter (Dark Blade, SKIN, Brat)..."
@@ -230,7 +242,7 @@ local function buildGui()
 
     local refreshBtn = Instance.new("TextButton")
     refreshBtn.Size = UDim2.fromOffset(75, 28)
-    refreshBtn.Position = UDim2.fromOffset(228, 42)
+    refreshBtn.Position = UDim2.fromOffset(238, 54)
     refreshBtn.BackgroundColor3 = Color3.fromRGB(45, 52, 64)
     refreshBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     refreshBtn.Font = Enum.Enum.Font.Code
@@ -240,7 +252,7 @@ local function buildGui()
 
     local copyBtn = Instance.new("TextButton")
     copyBtn.Size = UDim2.fromOffset(105, 28)
-    copyBtn.Position = UDim2.fromOffset(310, 42)
+    copyBtn.Position = UDim2.fromOffset(320, 54)
     copyBtn.BackgroundColor3 = Color3.fromRGB(38, 110, 82)
     copyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     copyBtn.Font = Enum.Enum.Font.Code
@@ -250,7 +262,7 @@ local function buildGui()
 
     local discordBtn = Instance.new("TextButton")
     discordBtn.Size = UDim2.fromOffset(115, 28)
-    discordBtn.Position = UDim2.fromOffset(422, 42)
+    discordBtn.Position = UDim2.fromOffset(432, 54)
     discordBtn.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
     discordBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
     discordBtn.Font = Enum.Enum.Font.Code
@@ -258,20 +270,20 @@ local function buildGui()
     discordBtn.Text = "Send .txt"
     discordBtn.Parent = frame
 
-    local statusLabel = Instance.new("TextLabel")
-    statusLabel.Size = UDim2.new(1, -552, 0, 28)
-    statusLabel.Position = UDim2.fromOffset(544, 42)
-    statusLabel.BackgroundTransparency = 1
-    statusLabel.TextColor3 = Color3.fromRGB(170, 180, 195)
-    statusLabel.TextXAlignment = Enum.TextXAlignment.Right
-    statusLabel.Font = Enum.Enum.Font.Code
-    statusLabel.TextSize = 11
-    statusLabel.Text = "Ready"
-    statusLabel.Parent = frame
+    local countLabel = Instance.new("TextLabel")
+    countLabel.Size = UDim2.new(1, -562, 0, 28)
+    countLabel.Position = UDim2.fromOffset(554, 54)
+    countLabel.BackgroundTransparency = 1
+    countLabel.TextColor3 = Color3.fromRGB(170, 180, 195)
+    countLabel.TextXAlignment = Enum.TextXAlignment.Right
+    countLabel.Font = Enum.Enum.Font.Code
+    countLabel.TextSize = 12
+    countLabel.Text = "0/0"
+    countLabel.Parent = frame
 
     local scroll = Instance.new("ScrollingFrame")
-    scroll.Size = UDim2.new(1, -20, 1, -86)
-    scroll.Position = UDim2.fromOffset(10, 78)
+    scroll.Size = UDim2.new(1, -20, 1, -98)
+    scroll.Position = UDim2.fromOffset(10, 90)
     scroll.BackgroundColor3 = Color3.fromRGB(15, 17, 20)
     scroll.BorderSizePixel = 0
     scroll.ScrollBarThickness = 6
@@ -307,17 +319,19 @@ local function buildGui()
         end
         currentFilteredText = table.concat(out, "\n")
         box.Text = currentFilteredText
-        statusLabel.Text = tostring(#out) .. "/" .. tostring(#allRows)
+        countLabel.Text = tostring(#out) .. "/" .. tostring(#allRows)
         local heightPx = math.max(#out, 1) * 16 + 16
         box.Size = UDim2.new(1, -12, 0, heightPx)
         scroll.CanvasSize = UDim2.fromOffset(0, heightPx)
     end
 
     local function pushToDiscord(textToSend, count)
-        statusLabel.Text = "Uploading .txt..."
+        webhookStatus.TextColor3 = Color3.fromRGB(255, 210, 100)
+        webhookStatus.Text = "Status: Uploading .txt to Discord..."
         task.spawn(function()
             local ok, msg = sendTxtToDiscord(textToSend, count)
-            statusLabel.Text = ok and ("✅ " .. msg) or ("❌ " .. msg)
+            webhookStatus.TextColor3 = ok and Color3.fromRGB(100, 240, 150) or Color3.fromRGB(255, 100, 100)
+            webhookStatus.Text = "Status: " .. msg
         end)
     end
 
@@ -328,6 +342,11 @@ local function buildGui()
             table.insert(allLines, r.Line)
         end
         fullDumpText = table.concat(allLines, "\n")
+
+        if type(writefile) == "function" then
+            pcall(writefile, "bf_item_dump.txt", fullDumpText)
+        end
+
         applyFilter()
         if autoSend then
             pushToDiscord(fullDumpText, #allRows)
@@ -353,7 +372,6 @@ local function buildGui()
         end
     end)
 
-    -- Runs immediately on execution and automatically sends the full .txt dump to Discord
     reload(true)
 end
 
