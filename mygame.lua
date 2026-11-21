@@ -1,43 +1,21 @@
 
 --=========================================================
--- BLOX FRUITS - COMPLETE ITEM DUMPER + DISCORD SENDER
+-- BLOX FRUITS - ITEM CATALOGUE / TRADABILITY DUMPER
 --=========================================================
--- Features:
--- 1. Scans available ItemConfig definitions
--- 2. Includes owned and unowned items
--- 3. Displays ItemId, DisplayName, StorageKey and Type
--- 4. Checks ownership
--- 5. Checks equipped status when available
--- 6. Inspects explicit tradability metadata
--- 7. Unknown status when metadata is unavailable
--- 8. GUI with Refresh and Copy All
--- 9. Automatically sends report to Discord
--- 10. Splits reports into Discord-sized messages
+-- Reports:
+-- ItemId | DisplayName | StorageKey | Type
+-- Ownership | Equipped | Tradability
 --
--- NOTE:
--- This script does not invent tradability classifications.
--- It can only identify fields exposed in the scanned data.
+-- IMPORTANT:
+-- Tradability is only reported when explicit metadata
+-- is available. Missing metadata = UNKNOWN.
 --=========================================================
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CoreGui = game:GetService("CoreGui")
-local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
-
---=========================================================
--- CONFIGURATION
---=========================================================
-
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1573609152549224509/TgrDN2kKASX7-U6mNDfxTZPpzGMXgG5NpzBjH9lGeS3-MDjFmp2aOS6vgUOCKDSBb_WK"
-
-local AUTO_SEND_ON_REFRESH = true
-local AUTO_SEND_ON_START = true
-
---=========================================================
--- MODULES
---=========================================================
 
 local ItemReplicationService = require(
     ReplicatedStorage:WaitForChild("ItemReplicationService")
@@ -52,7 +30,7 @@ local ItemConfig = require(
 )
 
 --=========================================================
--- HELPERS
+-- GENERAL HELPERS
 --=========================================================
 
 local function safeString(value)
@@ -74,9 +52,11 @@ local function normalizeKey(value)
 end
 
 local function getDisplayName(cfg)
-    if type(cfg) == "table"
-        and type(cfg.Display) == "table" then
+    if type(cfg) ~= "table" then
+        return "N/A"
+    end
 
+    if type(cfg.Display) == "table" then
         return safeString(cfg.Display.Name)
     end
 
@@ -107,11 +87,10 @@ local function getItemType(cfg)
 end
 
 --=========================================================
--- OWNERSHIP
+-- OWNERSHIP DATA
 --=========================================================
 
 local function getOwnershipData()
-
     local ownership = {}
 
     local ok, data = pcall(function()
@@ -123,21 +102,18 @@ local function getOwnershipData()
     end
 
     for _, entry in pairs(data) do
-
-        if type(entry) == "table"
-            and entry.ItemId ~= nil then
+        if type(entry) == "table" and entry.ItemId ~= nil then
 
             local id = tostring(entry.ItemId)
+
             local owned = false
 
             if entry.Value == true then
                 owned = true
-
             elseif type(entry.Value) == "number"
                 and entry.Value > 0 then
 
                 owned = true
-
             elseif type(entry.Count) == "number"
                 and entry.Count > 0 then
 
@@ -147,7 +123,6 @@ local function getOwnershipData()
             local equipped = nil
 
             for key, value in pairs(entry) do
-
                 local normalized = normalizeKey(key)
 
                 if normalized == "equipped"
@@ -172,16 +147,15 @@ local function getOwnershipData()
 end
 
 --=========================================================
--- ITEM ID COLLECTION
+-- CANDIDATE ITEM ID COLLECTION
 --=========================================================
 
 local function collectCandidateIds()
-
     local ids = {}
     local seen = {}
+    local visited = {}
 
     local function pushId(value)
-
         if value == nil then
             return
         end
@@ -196,20 +170,22 @@ local function collectCandidateIds()
         table.insert(ids, value)
     end
 
-    local function scanTable(tbl, depth, visited)
-
+    local function scanTable(tbl, depth)
         if type(tbl) ~= "table" then
             return
         end
 
-        if depth > 8 or visited[tbl] then
+        if depth > 8 then
+            return
+        end
+
+        if visited[tbl] then
             return
         end
 
         visited[tbl] = true
 
         for key, value in pairs(tbl) do
-
             if type(value) == "table" then
 
                 if value.ItemId ~= nil then
@@ -221,15 +197,15 @@ local function collectCandidateIds()
                     pushId(key)
                 end
 
-                scanTable(value, depth + 1, visited)
+                scanTable(value, depth + 1)
             end
         end
     end
 
-    -- Scan ItemConfig.
-    scanTable(ItemConfig, 0, {})
+    -- Scan ItemConfig catalogue.
+    scanTable(ItemConfig, 0)
 
-    -- Scan replicated item data if available.
+    -- Scan replicated item data if the method exists.
     if type(ItemReplicationService.GetAllItems) == "function" then
 
         local ok, allItems = pcall(function()
@@ -237,7 +213,7 @@ local function collectCandidateIds()
         end)
 
         if ok and type(allItems) == "table" then
-            scanTable(allItems, 0, {})
+            scanTable(allItems, 0)
         end
     end
 
@@ -245,26 +221,25 @@ local function collectCandidateIds()
 end
 
 --=========================================================
--- TRADABILITY METADATA
+-- TRADEABILITY METADATA INSPECTION
 --=========================================================
 
 local function inspectTradeMetadata(cfg)
 
     local result = {
         Status = "UNKNOWN",
-        Evidence = "No explicit metadata found"
+        Evidence = "No explicit trade metadata found"
     }
 
     local visited = {}
 
     local function scan(tbl, depth)
-
         if type(tbl) ~= "table" then
-            return false
+            return
         end
 
         if depth > 6 or visited[tbl] then
-            return false
+            return
         end
 
         visited[tbl] = true
@@ -281,23 +256,21 @@ local function inspectTradeMetadata(cfg)
                 or normalized == "cantrade"
                 or normalized == "canbetraded"
                 or normalized == "istradableitem"
+                or normalized == "canbetradable"
 
             if isTradeField then
 
                 if value == true then
-
                     result.Status = "TRADABLE"
                     result.Evidence = tostring(key)
                     return true
 
                 elseif value == false then
-
                     result.Status = "NON-TRADABLE"
                     result.Evidence = tostring(key)
                     return true
 
                 elseif type(value) == "string" then
-
                     local text = value:lower()
 
                     if text == "true"
@@ -338,17 +311,17 @@ end
 -- EQUIPPED STATUS
 --=========================================================
 
-local function getEquippedStatus(ownerInfo)
+local function getEquippedStatus(ownershipEntry)
 
-    if not ownerInfo or not ownerInfo.Owned then
+    if not ownershipEntry or not ownershipEntry.Owned then
         return "N/A (UNOWNED)"
     end
 
-    if ownerInfo.Equipped == true then
+    if ownershipEntry.Equipped == true then
         return "EQUIPPED"
     end
 
-    if ownerInfo.Equipped == false then
+    if ownershipEntry.Equipped == false then
         return "NOT EQUIPPED"
     end
 
@@ -385,8 +358,7 @@ local function dumpItems()
                 ownedStatus = "OWNED"
             end
 
-            table.insert(results, {
-
+            local row = {
                 ItemId = idString,
 
                 DisplayName = getDisplayName(cfg),
@@ -402,8 +374,9 @@ local function dumpItems()
                 Tradability = tradeInfo.Status,
 
                 TradeEvidence = tradeInfo.Evidence
+            }
 
-            })
+            table.insert(results, row)
         end
     end
 
@@ -423,21 +396,21 @@ local function dumpItems()
 end
 
 --=========================================================
--- FORMAT REPORT
+-- OUTPUT FORMAT
 --=========================================================
 
 local function formatDump(rows)
 
     local lines = {}
 
-    table.insert(lines, "BLOX FRUITS ITEM DUMP")
+    table.insert(lines, "========== BLOX FRUITS ITEM DUMP ==========")
     table.insert(lines, "Total Items: " .. tostring(#rows))
-    table.insert(lines, "========================================")
+    table.insert(lines, "")
 
     for _, item in ipairs(rows) do
 
         table.insert(lines, string.format(
-            "ID: %s | Name: %s | Key: %s | Type: %s | Owned: %s | Equipped: %s | Tradable: %s | Evidence: %s",
+            "ItemId: %s | Name: %s | Key: %s | Type: %s | Owned: %s | Equipped: %s | Tradable: %s | Evidence: %s",
 
             item.ItemId,
             item.DisplayName,
@@ -460,154 +433,16 @@ end
 local function copyText(str)
 
     if type(setclipboard) == "function" then
-
         local ok = pcall(setclipboard, str)
         return ok
     end
 
     if type(toclipboard) == "function" then
-
         local ok = pcall(toclipboard, str)
         return ok
     end
 
     return false
-end
-
---=========================================================
--- HTTP REQUEST
---=========================================================
-
-local function getRequestFunction()
-
-    if type(request) == "function" then
-        return request
-    end
-
-    if type(http_request) == "function" then
-        return http_request
-    end
-
-    if syn and type(syn.request) == "function" then
-        return syn.request
-    end
-
-    if http and type(http.request) == "function" then
-        return http.request
-    end
-
-    return nil
-end
-
---=========================================================
--- DISCORD SENDER
---=========================================================
-
-local function sendToDiscord(content)
-
-    local httpRequest = getRequestFunction()
-
-    if not httpRequest then
-        warn("Discord: HTTP request function unavailable")
-        return false
-    end
-
-    if not WEBHOOK_URL:match(
-        "^https://discord%.com/api/webhooks/"
-    ) then
-
-        warn("Discord: Configure a valid webhook URL first")
-        return false
-    end
-
-    -- Split report into messages below Discord's limit.
-    local chunks = {}
-    local current = ""
-
-    for line in content:gmatch("[^\n]+") do
-
-        if #line > 1750 then
-            warn("Discord: A report line exceeds the safe message size")
-            return false
-        end
-
-        if #current + #line + 1 > 1750 then
-
-            table.insert(chunks, current)
-            current = ""
-        end
-
-        current = current == ""
-            and line
-            or current .. "\n" .. line
-    end
-
-    if current ~= "" then
-        table.insert(chunks, current)
-    end
-
-    for index, chunk in ipairs(chunks) do
-
-        local payload = {
-
-            content = string.format(
-                "**Blox Fruits Item Dump (%d/%d)**\n```text\n%s\n```",
-                index,
-                #chunks,
-                chunk
-            ),
-
-            allowed_mentions = {
-                parse = {}
-            }
-        }
-
-        local ok, response = pcall(function()
-
-            return httpRequest({
-
-                Url = WEBHOOK_URL,
-
-                Method = "POST",
-
-                Headers = {
-                    ["Content-Type"] = "application/json"
-                },
-
-                Body = HttpService:JSONEncode(payload)
-
-            })
-        end)
-
-        if not ok or type(response) ~= "table" then
-
-            warn("Discord: Request failed for message " .. index)
-            return false
-        end
-
-        local status = tonumber(
-            response.StatusCode or response.Status
-        )
-
-        if status ~= 200 and status ~= 204 then
-
-            warn(
-                "Discord: Message failed",
-                index,
-                "HTTP status:",
-                status or "unknown",
-                response.Body or ""
-            )
-
-            return false
-        end
-
-        task.wait(0.7)
-    end
-
-    print("Discord: All report messages sent successfully")
-
-    return true
 end
 
 --=========================================================
@@ -619,7 +454,6 @@ local function buildGui()
     local parentGui
 
     if type(gethui) == "function" then
-
         local ok, result = pcall(gethui)
 
         if ok and result then
@@ -640,7 +474,6 @@ local function buildGui()
     end
 
     local gui = Instance.new("ScreenGui")
-
     gui.Name = "ItemTradabilityDumperGui"
     gui.ResetOnSpawn = false
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -648,7 +481,6 @@ local function buildGui()
 
     -- Main frame
     local frame = Instance.new("Frame")
-
     frame.Size = UDim2.fromOffset(850, 520)
     frame.Position = UDim2.new(0.5, -425, 0.5, -260)
     frame.BackgroundColor3 = Color3.fromRGB(22, 24, 29)
@@ -663,8 +495,7 @@ local function buildGui()
 
     -- Title
     local title = Instance.new("TextLabel")
-
-    title.Size = UDim2.new(1, -60, 0, 35)
+    title.Size = UDim2.new(1, -20, 0, 35)
     title.Position = UDim2.fromOffset(10, 5)
     title.BackgroundTransparency = 1
     title.TextColor3 = Color3.fromRGB(240, 244, 248)
@@ -676,7 +507,6 @@ local function buildGui()
 
     -- Refresh
     local refreshBtn = Instance.new("TextButton")
-
     refreshBtn.Size = UDim2.fromOffset(100, 32)
     refreshBtn.Position = UDim2.fromOffset(10, 45)
     refreshBtn.BackgroundColor3 = Color3.fromRGB(45, 90, 145)
@@ -688,7 +518,6 @@ local function buildGui()
 
     -- Copy
     local copyBtn = Instance.new("TextButton")
-
     copyBtn.Size = UDim2.fromOffset(110, 32)
     copyBtn.Position = UDim2.fromOffset(120, 45)
     copyBtn.BackgroundColor3 = Color3.fromRGB(38, 110, 82)
@@ -700,7 +529,6 @@ local function buildGui()
 
     -- Count
     local countLabel = Instance.new("TextLabel")
-
     countLabel.Size = UDim2.new(1, -360, 0, 32)
     countLabel.Position = UDim2.fromOffset(240, 45)
     countLabel.BackgroundTransparency = 1
@@ -713,7 +541,6 @@ local function buildGui()
 
     -- Close
     local closeBtn = Instance.new("TextButton")
-
     closeBtn.Size = UDim2.fromOffset(32, 32)
     closeBtn.Position = UDim2.new(1, -42, 0, 5)
     closeBtn.BackgroundColor3 = Color3.fromRGB(145, 48, 48)
@@ -723,9 +550,8 @@ local function buildGui()
     closeBtn.Text = "X"
     closeBtn.Parent = frame
 
-    -- Output
+    -- Scrolling output
     local scroll = Instance.new("ScrollingFrame")
-
     scroll.Size = UDim2.new(1, -20, 1, -95)
     scroll.Position = UDim2.fromOffset(10, 85)
     scroll.BackgroundColor3 = Color3.fromRGB(13, 15, 19)
@@ -735,7 +561,6 @@ local function buildGui()
     scroll.Parent = frame
 
     local box = Instance.new("TextBox")
-
     box.Size = UDim2.new(1, -12, 0, 100)
     box.Position = UDim2.fromOffset(6, 5)
     box.BackgroundTransparency = 1
@@ -752,32 +577,17 @@ local function buildGui()
     box.Parent = scroll
 
     local currentFormatted = ""
-    local isScanning = false
 
-    --=====================================================
-    -- RELOAD
-    --=====================================================
-
+    -- Refresh function
     local function reload()
 
-        if isScanning then
-            return
-        end
-
-        isScanning = true
-        refreshBtn.Text = "Scanning..."
+        countLabel.Text = "Scanning..."
 
         local ok, rows = pcall(dumpItems)
 
         if not ok then
-
-            box.Text = "ERROR WHILE SCANNING:\n"
-                .. tostring(rows)
-
+            box.Text = "ERROR WHILE SCANNING:\n" .. tostring(rows)
             countLabel.Text = "Scan failed"
-            refreshBtn.Text = "Refresh"
-            isScanning = false
-
             return
         end
 
@@ -794,17 +604,11 @@ local function buildGui()
         local unknown = 0
 
         for _, item in ipairs(rows) do
-
             if item.Tradability == "TRADABLE" then
-
                 tradable = tradable + 1
-
             elseif item.Tradability == "NON-TRADABLE" then
-
                 nonTradable = nonTradable + 1
-
             else
-
                 unknown = unknown + 1
             end
         end
@@ -816,51 +620,24 @@ local function buildGui()
             nonTradable,
             unknown
         )
-
-        refreshBtn.Text = "Refresh"
-        isScanning = false
-
-        -- Automatic Discord sending.
-        if AUTO_SEND_ON_REFRESH then
-
-            task.spawn(function()
-
-                local sent = sendToDiscord(currentFormatted)
-
-                if sent then
-                    print("Automatic Discord report completed")
-                else
-                    warn("Automatic Discord report failed")
-                end
-            end)
-        end
     end
-
-    --=====================================================
-    -- BUTTON CONNECTIONS
-    --=====================================================
 
     refreshBtn.MouseButton1Click:Connect(reload)
 
     copyBtn.MouseButton1Click:Connect(function()
 
         if currentFormatted == "" then
-
             copyBtn.Text = "Nothing to Copy"
             return
         end
 
         if copyText(currentFormatted) then
-
             copyBtn.Text = "Copied!"
-
         else
-
             copyBtn.Text = "Clipboard Error"
         end
 
         task.delay(1.5, function()
-
             if copyBtn and copyBtn.Parent then
                 copyBtn.Text = "Copy All"
             end
@@ -871,12 +648,7 @@ local function buildGui()
         gui:Destroy()
     end)
 
-    -- Initial scan
-    if AUTO_SEND_ON_START then
-        reload()
-    else
-        box.Text = "Press Refresh to begin."
-    end
+    reload()
 end
 
 --=========================================================
