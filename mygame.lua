@@ -1,14 +1,17 @@
 
 --=========================================================
--- BLOX FRUITS - ITEM CATALOGUE / TRADABILITY DUMPER
+-- BLOX FRUITS - ITEM CATALOGUE DIAGNOSTIC DUMPER
 --=========================================================
--- Reports:
--- ItemId | DisplayName | StorageKey | Type
--- Ownership | Equipped | Tradability
+-- Displays:
+-- 1. ItemConfig structure
+-- 2. ItemReplicationService structure
+-- 3. KEYS structure
+-- 4. MasterItemDictionary availability
+-- 5. Candidate item IDs discovered
+-- 6. Any item definitions successfully resolved
 --
--- IMPORTANT:
--- Tradability is only reported when explicit metadata
--- is available. Missing metadata = UNKNOWN.
+-- Diagnostics appear directly in the GUI.
+-- No executor console required.
 --=========================================================
 
 local Players = game:GetService("Players")
@@ -16,6 +19,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CoreGui = game:GetService("CoreGui")
 
 local LocalPlayer = Players.LocalPlayer
+
+--=========================================================
+-- MODULES
+--=========================================================
 
 local ItemReplicationService = require(
     ReplicatedStorage:WaitForChild("ItemReplicationService")
@@ -30,7 +37,14 @@ local ItemConfig = require(
 )
 
 --=========================================================
--- GENERAL HELPERS
+-- STATE
+--=========================================================
+
+local scanDiagnostics = ""
+local currentFormatted = ""
+
+--=========================================================
+-- HELPERS
 --=========================================================
 
 local function safeString(value)
@@ -52,11 +66,9 @@ local function normalizeKey(value)
 end
 
 local function getDisplayName(cfg)
-    if type(cfg) ~= "table" then
-        return "N/A"
-    end
+    if type(cfg) == "table"
+        and type(cfg.Display) == "table" then
 
-    if type(cfg.Display) == "table" then
         return safeString(cfg.Display.Name)
     end
 
@@ -87,75 +99,64 @@ local function getItemType(cfg)
 end
 
 --=========================================================
--- OWNERSHIP DATA
+-- DIAGNOSTIC TABLE INSPECTION
 --=========================================================
 
-local function getOwnershipData()
-    local ownership = {}
+local function inspectTable(name, tbl, lines)
 
-    local ok, data = pcall(function()
-        return ItemReplicationService:GetItems(KEYS.IS_OWNED)
-    end)
+    table.insert(lines, "")
+    table.insert(lines, "========== " .. name .. " ==========")
+    table.insert(lines, "Type: " .. typeof(tbl))
 
-    if not ok or type(data) ~= "table" then
-        return ownership
+    if type(tbl) ~= "table" then
+        table.insert(lines, "Not a Lua table")
+        return
     end
 
-    for _, entry in pairs(data) do
-        if type(entry) == "table" and entry.ItemId ~= nil then
+    local count = 0
 
-            local id = tostring(entry.ItemId)
+    for key, value in pairs(tbl) do
 
-            local owned = false
+        count = count + 1
 
-            if entry.Value == true then
-                owned = true
-            elseif type(entry.Value) == "number"
-                and entry.Value > 0 then
+        local valueType = typeof(value)
+        local valueText = ""
 
-                owned = true
-            elseif type(entry.Count) == "number"
-                and entry.Count > 0 then
+        if type(value) == "function" then
+            valueText = "FUNCTION"
+        elseif type(value) == "table" then
+            valueText = "TABLE"
+        else
+            valueText = tostring(value)
+        end
 
-                owned = true
-            end
+        table.insert(
+            lines,
+            tostring(key) .. " | " ..
+            valueType .. " | " .. valueText
+        )
 
-            local equipped = nil
-
-            for key, value in pairs(entry) do
-                local normalized = normalizeKey(key)
-
-                if normalized == "equipped"
-                    or normalized == "isequipped"
-                    or normalized == "isequippeditem" then
-
-                    if type(value) == "boolean" then
-                        equipped = value
-                    end
-                end
-            end
-
-            ownership[id] = {
-                Owned = owned,
-                Equipped = equipped,
-                Count = entry.Count
-            }
+        if count >= 40 then
+            table.insert(lines, "Stopped after 40 entries")
+            break
         end
     end
 
-    return ownership
+    table.insert(lines, "Entries inspected: " .. count)
 end
 
 --=========================================================
--- CANDIDATE ITEM ID COLLECTION
+-- CANDIDATE ITEM ID COLLECTION + DIAGNOSTICS
 --=========================================================
 
 local function collectCandidateIds()
+
     local ids = {}
     local seen = {}
-    local visited = {}
+    local lines = {}
 
     local function pushId(value)
+
         if value == nil then
             return
         end
@@ -170,22 +171,34 @@ local function collectCandidateIds()
         table.insert(ids, value)
     end
 
+    -- Inspect important modules.
+    inspectTable("ItemConfig", ItemConfig, lines)
+
+    inspectTable(
+        "ItemReplicationService",
+        ItemReplicationService,
+        lines
+    )
+
+    inspectTable("KEYS", KEYS, lines)
+
+    -- Scan ItemConfig recursively.
+    local visited = {}
+
     local function scanTable(tbl, depth)
+
         if type(tbl) ~= "table" then
             return
         end
 
-        if depth > 8 then
-            return
-        end
-
-        if visited[tbl] then
+        if depth > 8 or visited[tbl] then
             return
         end
 
         visited[tbl] = true
 
         for key, value in pairs(tbl) do
+
             if type(value) == "table" then
 
                 if value.ItemId ~= nil then
@@ -202,142 +215,113 @@ local function collectCandidateIds()
         end
     end
 
-    -- Scan ItemConfig catalogue.
     scanTable(ItemConfig, 0)
 
-    -- Scan replicated item data if the method exists.
-    if type(ItemReplicationService.GetAllItems) == "function" then
+    -- Check GetAllItems if exposed.
+    local getAllItemsAvailable =
+        type(ItemReplicationService.GetAllItems) == "function"
+
+    table.insert(lines, "")
+    table.insert(
+        lines,
+        "GetAllItems available: " ..
+        tostring(getAllItemsAvailable)
+    )
+
+    if getAllItemsAvailable then
 
         local ok, allItems = pcall(function()
             return ItemReplicationService:GetAllItems()
         end)
 
+        table.insert(
+            lines,
+            "GetAllItems successful: " .. tostring(ok)
+        )
+
         if ok and type(allItems) == "table" then
+
+            inspectTable("GetAllItems result", allItems, lines)
+
             scanTable(allItems, 0)
+
+        elseif not ok then
+
+            table.insert(lines, "GetAllItems error: " .. tostring(allItems))
         end
     end
+
+    -- Check MasterItemDictionary.
+    local master = ReplicatedStorage:FindFirstChild(
+        "MasterItemDictionary"
+    )
+
+    table.insert(lines, "")
+    table.insert(
+        lines,
+        "MasterItemDictionary exists: " .. tostring(master ~= nil)
+    )
+
+    if master then
+
+        table.insert(
+            lines,
+            "MasterItemDictionary class: " .. master.ClassName
+        )
+
+        if master:IsA("ModuleScript") then
+
+            local ok, result = pcall(require, master)
+
+            table.insert(
+                lines,
+                "MasterItemDictionary require successful: " ..
+                tostring(ok)
+            )
+
+            if ok and type(result) == "table" then
+
+                inspectTable(
+                    "MasterItemDictionary contents",
+                    result,
+                    lines
+                )
+
+                scanTable(result, 0)
+
+            elseif not ok then
+
+                table.insert(
+                    lines,
+                    "Require error: " .. tostring(result)
+                )
+            end
+        end
+    end
+
+    table.insert(lines, "")
+    table.insert(lines, "========== DISCOVERY SUMMARY ==========")
+    table.insert(
+        lines,
+        "Candidate IDs discovered: " .. tostring(#ids)
+    )
+
+    scanDiagnostics = table.concat(lines, "\n")
 
     return ids
 end
 
 --=========================================================
--- TRADEABILITY METADATA INSPECTION
---=========================================================
-
-local function inspectTradeMetadata(cfg)
-
-    local result = {
-        Status = "UNKNOWN",
-        Evidence = "No explicit trade metadata found"
-    }
-
-    local visited = {}
-
-    local function scan(tbl, depth)
-        if type(tbl) ~= "table" then
-            return
-        end
-
-        if depth > 6 or visited[tbl] then
-            return
-        end
-
-        visited[tbl] = true
-
-        for key, value in pairs(tbl) do
-
-            local normalized = normalizeKey(key)
-
-            local isTradeField =
-                normalized == "tradable"
-                or normalized == "tradeable"
-                or normalized == "istradable"
-                or normalized == "istradeable"
-                or normalized == "cantrade"
-                or normalized == "canbetraded"
-                or normalized == "istradableitem"
-                or normalized == "canbetradable"
-
-            if isTradeField then
-
-                if value == true then
-                    result.Status = "TRADABLE"
-                    result.Evidence = tostring(key)
-                    return true
-
-                elseif value == false then
-                    result.Status = "NON-TRADABLE"
-                    result.Evidence = tostring(key)
-                    return true
-
-                elseif type(value) == "string" then
-                    local text = value:lower()
-
-                    if text == "true"
-                        or text == "tradable"
-                        or text == "tradeable" then
-
-                        result.Status = "TRADABLE"
-                        result.Evidence = tostring(key)
-                        return true
-
-                    elseif text == "false"
-                        or text == "non-tradable"
-                        or text == "nontradable" then
-
-                        result.Status = "NON-TRADABLE"
-                        result.Evidence = tostring(key)
-                        return true
-                    end
-                end
-            end
-
-            if type(value) == "table" then
-                if scan(value, depth + 1) then
-                    return true
-                end
-            end
-        end
-
-        return false
-    end
-
-    scan(cfg, 0)
-
-    return result
-end
-
---=========================================================
--- EQUIPPED STATUS
---=========================================================
-
-local function getEquippedStatus(ownershipEntry)
-
-    if not ownershipEntry or not ownershipEntry.Owned then
-        return "N/A (UNOWNED)"
-    end
-
-    if ownershipEntry.Equipped == true then
-        return "EQUIPPED"
-    end
-
-    if ownershipEntry.Equipped == false then
-        return "NOT EQUIPPED"
-    end
-
-    return "UNKNOWN"
-end
-
---=========================================================
--- MAIN DUMP
+-- ITEM DEFINITION SCAN
 --=========================================================
 
 local function dumpItems()
 
     local results = {}
-
     local candidateIds = collectCandidateIds()
-    local ownership = getOwnershipData()
+
+    local resolved = 0
+    local failed = 0
 
     for _, id in ipairs(candidateIds) do
 
@@ -347,36 +331,23 @@ local function dumpItems()
 
         if ok and type(cfg) == "table" then
 
-            local idString = tostring(id)
+            resolved = resolved + 1
 
-            local tradeInfo = inspectTradeMetadata(cfg)
-            local ownerInfo = ownership[idString]
+            table.insert(results, {
 
-            local ownedStatus = "UNOWNED"
-
-            if ownerInfo and ownerInfo.Owned then
-                ownedStatus = "OWNED"
-            end
-
-            local row = {
-                ItemId = idString,
+                ItemId = tostring(id),
 
                 DisplayName = getDisplayName(cfg),
 
                 StorageKey = getStorageKey(cfg),
 
-                ItemType = getItemType(cfg),
+                ItemType = getItemType(cfg)
 
-                Ownership = ownedStatus,
+            })
 
-                Equipped = getEquippedStatus(ownerInfo),
+        else
 
-                Tradability = tradeInfo.Status,
-
-                TradeEvidence = tradeInfo.Evidence
-            }
-
-            table.insert(results, row)
+            failed = failed + 1
         end
     end
 
@@ -392,35 +363,52 @@ local function dumpItems()
         return nameA < nameB
     end)
 
-    return results
+    return results, #candidateIds, resolved, failed
 end
 
 --=========================================================
 -- OUTPUT FORMAT
 --=========================================================
 
-local function formatDump(rows)
+local function formatDump(rows, candidateCount, resolved, failed)
 
     local lines = {}
 
-    table.insert(lines, "========== BLOX FRUITS ITEM DUMP ==========")
-    table.insert(lines, "Total Items: " .. tostring(#rows))
+    table.insert(lines, "========== BLOX FRUITS DIAGNOSTIC DUMP ==========")
+
     table.insert(lines, "")
+    table.insert(lines, "Candidate IDs: " .. tostring(candidateCount))
+    table.insert(lines, "Resolved items: " .. tostring(resolved))
+    table.insert(lines, "Failed resolutions: " .. tostring(failed))
+    table.insert(lines, "Total displayed items: " .. tostring(#rows))
 
-    for _, item in ipairs(rows) do
+    table.insert(lines, "")
+    table.insert(lines, "========== DIAGNOSTIC INFORMATION ==========")
+    table.insert(lines, scanDiagnostics)
 
-        table.insert(lines, string.format(
-            "ItemId: %s | Name: %s | Key: %s | Type: %s | Owned: %s | Equipped: %s | Tradable: %s | Evidence: %s",
+    table.insert(lines, "")
+    table.insert(lines, "========== ITEM RESULTS ==========")
 
-            item.ItemId,
-            item.DisplayName,
-            item.StorageKey,
-            item.ItemType,
-            item.Ownership,
-            item.Equipped,
-            item.Tradability,
-            item.TradeEvidence
-        ))
+    if #rows == 0 then
+
+        table.insert(
+            lines,
+            "No item definitions were resolved."
+        )
+
+    else
+
+        for _, item in ipairs(rows) do
+
+            table.insert(lines, string.format(
+                "ItemId: %s | Name: %s | Key: %s | Type: %s",
+
+                item.ItemId,
+                item.DisplayName,
+                item.StorageKey,
+                item.ItemType
+            ))
+        end
     end
 
     return table.concat(lines, "\n")
@@ -433,11 +421,13 @@ end
 local function copyText(str)
 
     if type(setclipboard) == "function" then
+
         local ok = pcall(setclipboard, str)
         return ok
     end
 
     if type(toclipboard) == "function" then
+
         local ok = pcall(toclipboard, str)
         return ok
     end
@@ -454,6 +444,7 @@ local function buildGui()
     local parentGui
 
     if type(gethui) == "function" then
+
         local ok, result = pcall(gethui)
 
         if ok and result then
@@ -474,6 +465,7 @@ local function buildGui()
     end
 
     local gui = Instance.new("ScreenGui")
+
     gui.Name = "ItemTradabilityDumperGui"
     gui.ResetOnSpawn = false
     gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -481,6 +473,7 @@ local function buildGui()
 
     -- Main frame
     local frame = Instance.new("Frame")
+
     frame.Size = UDim2.fromOffset(850, 520)
     frame.Position = UDim2.new(0.5, -425, 0.5, -260)
     frame.BackgroundColor3 = Color3.fromRGB(22, 24, 29)
@@ -495,18 +488,20 @@ local function buildGui()
 
     -- Title
     local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -20, 0, 35)
+
+    title.Size = UDim2.new(1, -60, 0, 35)
     title.Position = UDim2.fromOffset(10, 5)
     title.BackgroundTransparency = 1
     title.TextColor3 = Color3.fromRGB(240, 244, 248)
     title.TextXAlignment = Enum.TextXAlignment.Left
     title.Font = Enum.Font.Code
     title.TextSize = 17
-    title.Text = "Blox Fruits - Item Tradability Dumper"
+    title.Text = "Blox Fruits - Item Catalogue Diagnostics"
     title.Parent = frame
 
     -- Refresh
     local refreshBtn = Instance.new("TextButton")
+
     refreshBtn.Size = UDim2.fromOffset(100, 32)
     refreshBtn.Position = UDim2.fromOffset(10, 45)
     refreshBtn.BackgroundColor3 = Color3.fromRGB(45, 90, 145)
@@ -518,6 +513,7 @@ local function buildGui()
 
     -- Copy
     local copyBtn = Instance.new("TextButton")
+
     copyBtn.Size = UDim2.fromOffset(110, 32)
     copyBtn.Position = UDim2.fromOffset(120, 45)
     copyBtn.BackgroundColor3 = Color3.fromRGB(38, 110, 82)
@@ -529,6 +525,7 @@ local function buildGui()
 
     -- Count
     local countLabel = Instance.new("TextLabel")
+
     countLabel.Size = UDim2.new(1, -360, 0, 32)
     countLabel.Position = UDim2.fromOffset(240, 45)
     countLabel.BackgroundTransparency = 1
@@ -541,6 +538,7 @@ local function buildGui()
 
     -- Close
     local closeBtn = Instance.new("TextButton")
+
     closeBtn.Size = UDim2.fromOffset(32, 32)
     closeBtn.Position = UDim2.new(1, -42, 0, 5)
     closeBtn.BackgroundColor3 = Color3.fromRGB(145, 48, 48)
@@ -552,6 +550,7 @@ local function buildGui()
 
     -- Scrolling output
     local scroll = Instance.new("ScrollingFrame")
+
     scroll.Size = UDim2.new(1, -20, 1, -95)
     scroll.Position = UDim2.fromOffset(10, 85)
     scroll.BackgroundColor3 = Color3.fromRGB(13, 15, 19)
@@ -561,6 +560,7 @@ local function buildGui()
     scroll.Parent = frame
 
     local box = Instance.new("TextBox")
+
     box.Size = UDim2.new(1, -12, 0, 100)
     box.Position = UDim2.fromOffset(6, 5)
     box.BackgroundTransparency = 1
@@ -573,71 +573,98 @@ local function buildGui()
     box.Font = Enum.Font.Code
     box.TextSize = 12
     box.TextColor3 = Color3.fromRGB(215, 225, 235)
-    box.Text = "Press Refresh to scan item definitions."
+    box.Text = "Press Refresh to inspect item definitions."
     box.Parent = scroll
 
-    local currentFormatted = ""
+    --=====================================================
+    -- RELOAD
+    --=====================================================
 
-    -- Refresh function
+    local isScanning = false
+
     local function reload()
 
-        countLabel.Text = "Scanning..."
-
-        local ok, rows = pcall(dumpItems)
-
-        if not ok then
-            box.Text = "ERROR WHILE SCANNING:\n" .. tostring(rows)
-            countLabel.Text = "Scan failed"
+        if isScanning then
             return
         end
 
-        currentFormatted = formatDump(rows)
-        box.Text = currentFormatted
+        isScanning = true
+        refreshBtn.Text = "Scanning..."
+        countLabel.Text = "Inspecting..."
 
-        local heightPx = math.max(#rows, 1) * 19 + 30
+        local ok, rows, candidateCount, resolved, failed =
+            pcall(dumpItems)
 
-        box.Size = UDim2.new(1, -12, 0, heightPx)
-        scroll.CanvasSize = UDim2.fromOffset(0, heightPx)
+        if not ok then
 
-        local tradable = 0
-        local nonTradable = 0
-        local unknown = 0
+            box.Text = "SCAN ERROR:\n" .. tostring(rows)
 
-        for _, item in ipairs(rows) do
-            if item.Tradability == "TRADABLE" then
-                tradable = tradable + 1
-            elseif item.Tradability == "NON-TRADABLE" then
-                nonTradable = nonTradable + 1
-            else
-                unknown = unknown + 1
-            end
+            countLabel.Text = "Scan failed"
+            refreshBtn.Text = "Refresh"
+            isScanning = false
+
+            return
         end
 
-        countLabel.Text = string.format(
-            "%d Items | T:%d NT:%d ?: %d",
-            #rows,
-            tradable,
-            nonTradable,
-            unknown
+        currentFormatted = formatDump(
+            rows,
+            candidateCount,
+            resolved,
+            failed
         )
+
+        box.Text = currentFormatted
+
+        local lineCount = 1
+
+        for _ in currentFormatted:gmatch("\n") do
+            lineCount = lineCount + 1
+        end
+
+        local heightPx = math.max(lineCount * 16 + 20, 100)
+
+        box.Size = UDim2.new(1, -12, 0, heightPx)
+
+        scroll.CanvasSize = UDim2.fromOffset(
+            0,
+            heightPx
+        )
+
+        countLabel.Text = string.format(
+            "Candidates: %d | Resolved: %d",
+            candidateCount,
+            resolved
+        )
+
+        refreshBtn.Text = "Refresh"
+        isScanning = false
     end
+
+    --=====================================================
+    -- BUTTONS
+    --=====================================================
 
     refreshBtn.MouseButton1Click:Connect(reload)
 
     copyBtn.MouseButton1Click:Connect(function()
 
         if currentFormatted == "" then
+
             copyBtn.Text = "Nothing to Copy"
             return
         end
 
         if copyText(currentFormatted) then
+
             copyBtn.Text = "Copied!"
+
         else
+
             copyBtn.Text = "Clipboard Error"
         end
 
         task.delay(1.5, function()
+
             if copyBtn and copyBtn.Parent then
                 copyBtn.Text = "Copy All"
             end
@@ -648,6 +675,7 @@ local function buildGui()
         gui:Destroy()
     end)
 
+    -- Initial scan
     reload()
 end
 
