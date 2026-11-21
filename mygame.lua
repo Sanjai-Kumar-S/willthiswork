@@ -1,6 +1,6 @@
 -- =========================================================
--- BLOX FRUITS INVENTORY WEBHOOK SENDER
--- Categorizes Permanent Fruits, Physical Fruits, and Skins
+-- BLOX FRUITS STRICT TRADABLE INVENTORY WEBHOOK SENDER
+-- Filters out titles, races, abilities, and equipped/redeemed items
 -- =========================================================
 
 local Players = game:GetService("Players")
@@ -28,7 +28,7 @@ local ItemConfig = require(
 local WEBHOOK_URL = "https://discord.com/api/webhooks/1573609152549224509/TgrDN2kKASX7-U6mNDfxTZPpzGMXgG5NpzBjH9lGeS3-MDjFmp2aOS6vgUOCKDSBb_WK"
 
 -- =========================================================
--- 2. ID LOOKUP TABLES (From Version 4)
+-- 2. STRICT TRADABLE ID TABLES
 -- =========================================================
 
 local TradablePhysicalIds = {
@@ -77,7 +77,6 @@ local SpecialTargets = {
     "2x mastery", "2x money", "2x boss drops", "legendary scroll", "mythical scroll"
 }
 
--- Build reverse ID lookup sets for fast classification
 local PermIdLookup = {}
 for _, id in pairs(TradablePermIds) do PermIdLookup[id] = true end
 
@@ -85,65 +84,88 @@ local PhysIdLookup = {}
 for _, id in pairs(TradablePhysicalIds) do PhysIdLookup[id] = true end
 
 -- =========================================================
--- 3. INVENTORY SCANNER & CATEGORIZER
+-- 3. METADATA & STRICT TRADABLE CHECK
 -- =========================================================
 
-local function getItemDisplayName(itemId)
+local function getItemInfo(itemId)
     local ok, cfg = pcall(function()
         return ItemConfig.tryGet(itemId)
     end)
 
     if ok and type(cfg) == "table" then
-        local display = cfg.Display and cfg.Display.Name
-        local storage = cfg.Index and cfg.Index.StorageKey
-        if display and display ~= "" then
-            return tostring(display), tostring(storage or ""):lower()
-        elseif storage and storage ~= "" then
-            return tostring(storage), tostring(storage):lower()
-        end
+        local display = (cfg.Display and cfg.Display.Name) or ""
+        local storage = (cfg.Index and cfg.Index.StorageKey) or ""
+        local itemType = tostring(cfg.Type or (cfg.Index and cfg.Index.Type) or ""):lower()
+        local name = (display ~= "" and display) or (storage ~= "" and storage) or ("Item #" .. tostring(itemId))
+        return tostring(name), tostring(storage):lower(), itemType, cfg
     end
 
-    return "Item #" .. tostring(itemId), ""
+    return "Item #" .. tostring(itemId), "", "", nil
 end
 
-local function isSpecialSkinOrPass(displayName, storageKey)
+local function isSpecialSkinOrPass(displayName, storageKey, itemType, cfg)
+    -- Exclude equipped/unlocked weapons, titles, or non-stored items
+    if itemType == "sword" or itemType == "weapon" or itemType == "gun" or itemType == "title" then
+        return false
+    end
+
+    -- If config explicitly flags Tradable == false, reject it
+    if type(cfg) == "table" and cfg.Tradable == false then
+        return false
+    end
+
     local dLower = displayName:lower()
     for _, target in ipairs(SpecialTargets) do
-        if dLower == target or storageKey == target or dLower:find(target, 1, true) then
+        if dLower == target or storageKey == target then
             return true
         end
     end
     return false
 end
 
-local function scanInventory()
-    local ownedCounts = {}
-    local buckets = { KEYS.IS_OWNED, KEYS.COUNT }
+-- =========================================================
+-- 4. INVENTORY SCANNER (Separates Stored Counts vs Equipped)
+-- =========================================================
 
-    for _, keyType in ipairs(buckets) do
-        if keyType ~= nil then
-            local ok, items = pcall(function()
-                return ItemReplicationService:GetItems(keyType)
-            end)
+local function scanStrictTradableInventory()
+    local storedCounts = {} -- Only items with an actual stack count (KEYS.COUNT)
+    local ownedFlags = {}   -- Boolean ownership (KEYS.IS_OWNED)
 
-            if ok and type(items) == "table" then
-                for _, item in pairs(items) do
-                    if type(item) == "table" and item.ItemId then
-                        local count = 0
-                        if type(item.Count) == "number" and item.Count > 0 then
-                            count = item.Count
-                        elseif type(item.Value) == "number" and item.Value > 0 then
-                            count = item.Value
-                        elseif item.Value == true then
-                            count = 1
-                        end
+    -- 1. Read KEYS.COUNT (Stored physical fruits, stored perms, stored skins, stored gamepasses)
+    if KEYS.COUNT ~= nil then
+        local ok, items = pcall(function()
+            return ItemReplicationService:GetItems(KEYS.COUNT)
+        end)
 
-                        if count > 0 then
-                            local current = ownedCounts[item.ItemId] or 0
-                            if count > current then
-                                ownedCounts[item.ItemId] = count
-                            end
-                        end
+        if ok and type(items) == "table" then
+            for _, item in pairs(items) do
+                if type(item) == "table" and item.ItemId then
+                    local count = 0
+                    if type(item.Count) == "number" and item.Count > 0 then
+                        count = item.Count
+                    elseif type(item.Value) == "number" and item.Value > 0 then
+                        count = item.Value
+                    end
+
+                    if count > 0 then
+                        storedCounts[item.ItemId] = math.max(storedCounts[item.ItemId] or 0, count)
+                    end
+                end
+            end
+        end
+    end
+
+    -- 2. Read KEYS.IS_OWNED (Used ONLY for verified TradablePermIds if not in COUNT)
+    if KEYS.IS_OWNED ~= nil then
+        local ok, items = pcall(function()
+            return ItemReplicationService:GetItems(KEYS.IS_OWNED)
+        end)
+
+        if ok and type(items) == "table" then
+            for _, item in pairs(items) do
+                if type(item) == "table" and item.ItemId then
+                    if item.Value == true or (type(item.Value) == "number" and item.Value > 0) then
+                        ownedFlags[item.ItemId] = true
                     end
                 end
             end
@@ -154,16 +176,34 @@ local function scanInventory()
     local physList = {}
     local skinPassList = {}
 
-    for id, count in pairs(ownedCounts) do
-        local displayName, storageKey = getItemDisplayName(id)
-        local countSuffix = (count > 1) and (" `x" .. tostring(count) .. "`") or ""
+    -- A. Check Permanent Fruits (from storedCounts OR verified TradablePermIds in ownedFlags)
+    for id in pairs(PermIdLookup) do
+        local count = storedCounts[id] or (ownedFlags[id] and 1 or 0)
+        if count > 0 then
+            local displayName = getItemInfo(id)
+            local suffix = (count > 1) and (" `x" .. tostring(count) .. "`") or ""
+            table.insert(permList, "• **" .. displayName .. "**" .. suffix)
+        end
+    end
 
-        if PermIdLookup[id] then
-            table.insert(permList, "• **" .. displayName .. "**" .. countSuffix)
-        elseif PhysIdLookup[id] or (type(id) == "number" and (id >= 1389 or id == 254)) then
-            table.insert(physList, "• **" .. displayName .. "**" .. countSuffix)
-        elseif isSpecialSkinOrPass(displayName, storageKey) then
-            table.insert(skinPassList, "• **" .. displayName .. "**" .. countSuffix)
+    -- B. Check Physical Fruits (STRICTLY from PhysIdLookup + storedCounts)
+    for id in pairs(PhysIdLookup) do
+        local count = storedCounts[id]
+        if count and count > 0 then
+            local displayName = getItemInfo(id)
+            local suffix = (count > 1) and (" `x" .. tostring(count) .. "`") or ""
+            table.insert(physList, "• **" .. displayName .. "**" .. suffix)
+        end
+    end
+
+    -- C. Check Stored Limited Skins & Stored Gamepasses (MUST exist in storedCounts, ignoring equipped-only items)
+    for id, count in pairs(storedCounts) do
+        if not PermIdLookup[id] and not PhysIdLookup[id] then
+            local displayName, storageKey, itemType, cfg = getItemInfo(id)
+            if isSpecialSkinOrPass(displayName, storageKey, itemType, cfg) then
+                local suffix = (count > 1) and (" `x" .. tostring(count) .. "`") or ""
+                table.insert(skinPassList, "• **" .. displayName .. "**" .. suffix)
+            end
         end
     end
 
@@ -175,7 +215,7 @@ local function scanInventory()
 end
 
 -- =========================================================
--- 4. SAFE DISCORD EMBED BUILDER (Handles 1024-char limit)
+-- 5. SAFE DISCORD EMBED BUILDER
 -- =========================================================
 
 local function addChunkedFields(fieldsTable, baseTitle, lines)
@@ -217,11 +257,11 @@ local function addChunkedFields(fieldsTable, baseTitle, lines)
 end
 
 -- =========================================================
--- 5. SEND WEBHOOK
+-- 6. SEND WEBHOOK
 -- =========================================================
 
 local function sendInventoryWebhook()
-    local permList, physList, skinPassList = scanInventory()
+    local permList, physList, skinPassList = scanStrictTradableInventory()
 
     local fields = {}
     addChunkedFields(fields, "💎 Permanent Fruits", permList)
@@ -233,11 +273,11 @@ local function sendInventoryWebhook()
         embeds = {
             {
                 title = "📦 Tradable Inventory Report",
-                description = "**Account:** `" .. LocalPlayer.Name .. "`\n**Ready for `!add` commands**",
-                color = 3447003, -- Clean Discord Blue
+                description = "**Account:** `" .. LocalPlayer.Name .. "`\n**Status:** Strict Tradable Filter Active",
+                color = 3447003,
                 fields = fields,
                 footer = {
-                    text = "Trade Adder V4 • Total Categories: "
+                    text = "Trade Adder V4 • Tradable Only: "
                         .. tostring(#permList) .. " Perms | "
                         .. tostring(#physList) .. " Physical | "
                         .. tostring(#skinPassList) .. " Skins/Passes"
@@ -249,7 +289,6 @@ local function sendInventoryWebhook()
 
     local jsonBody = HttpService:JSONEncode(payload)
 
-    -- Support all common executor HTTP request functions
     local requestFunc =
         (syn and syn.request)
         or (http and http.request)
@@ -273,7 +312,7 @@ local function sendInventoryWebhook()
     end)
 
     if ok and response and (response.StatusCode == 200 or response.StatusCode == 204) then
-        print("[Webhook] Successfully sent tradable inventory to Discord!")
+        print("[Webhook] Successfully sent strict tradable inventory to Discord!")
     else
         warn("[Webhook] Failed to send:", response and response.StatusCode or response)
     end
