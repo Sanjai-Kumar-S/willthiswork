@@ -1,328 +1,66 @@
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1573609152549224509/TgrDN2kKASX7-U6mNDfxTZPpzGMXgG5NpzBjH9lGeS3-MDjFmp2aOS6vgUOCKDSBb_WK"
+local WEBHOOK = "https://discord.com/api/webhooks/1573609152549224509/TgrDN2kKASX7-U6mNDfxTZPpzGMXgG5NpzBjH9lGeS3-MDjFmp2aOS6vgUOCKDSBb_WK"
+local RS = game:GetService("ReplicatedStorage")
+local HS = game:GetService("HttpService")
+local LP = game:GetService("Players").LocalPlayer
+local req = request or http_request or (http and http.request) or (syn and syn.request)
 
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local HttpService = game:GetService("HttpService")
-
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-
--- 1. Build GUI in PlayerGui with high DisplayOrder so it renders above Delta
-local existing = PlayerGui:FindFirstChild("TradableRegistryDumperGui")
-if existing then existing:Destroy() end
-
-local gui = Instance.new("ScreenGui")
-gui.Name = "TradableRegistryDumperGui"
-gui.ResetOnSpawn = false
-gui.DisplayOrder = 999999
-gui.Parent = PlayerGui
-
-local frame = Instance.new("Frame")
-frame.Size = UDim2.fromOffset(520, 310)
-frame.Position = UDim2.new(0.5, -260, 0.5, -155)
-frame.BackgroundColor3 = Color3.fromRGB(22, 24, 28)
-frame.BorderSizePixel = 2
-frame.BorderColor3 = Color3.fromRGB(88, 101, 242)
-frame.Active = true
-frame.Draggable = true
-frame.Parent = gui
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -20, 0, 24)
-title.Position = UDim2.fromOffset(10, 6)
-title.BackgroundTransparency = 1
-title.TextColor3 = Color3.fromRGB(240, 244, 248)
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Font = Enum.Font.Code
-title.TextSize = 14
-title.Text = "BF ItemConfig + Tradable Dumper"
-title.Parent = frame
-
-local webhookStatus = Instance.new("TextLabel")
-webhookStatus.Size = UDim2.new(1, -20, 0, 22)
-webhookStatus.Position = UDim2.fromOffset(10, 30)
-webhookStatus.BackgroundTransparency = 1
-webhookStatus.TextColor3 = Color3.fromRGB(255, 210, 100)
-webhookStatus.TextXAlignment = Enum.TextXAlignment.Left
-webhookStatus.Font = Enum.Font.Code
-webhookStatus.TextSize = 12
-webhookStatus.Text = "Status: Running..."
-webhookStatus.Parent = frame
-
-local searchBox = Instance.new("TextBox")
-searchBox.Size = UDim2.fromOffset(180, 28)
-searchBox.Position = UDim2.fromOffset(10, 56)
-searchBox.BackgroundColor3 = Color3.fromRGB(32, 36, 44)
-searchBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-searchBox.PlaceholderText = "Filter (Dark Blade, SKIN)..."
-searchBox.Font = Enum.Font.Code
-searchBox.TextSize = 12
-searchBox.Text = ""
-searchBox.Parent = frame
-
-local copyBtn = Instance.new("TextButton")
-copyBtn.Size = UDim2.fromOffset(85, 28)
-copyBtn.Position = UDim2.fromOffset(198, 56)
-copyBtn.BackgroundColor3 = Color3.fromRGB(38, 110, 82)
-copyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-copyBtn.Font = Enum.Font.Code
-copyBtn.TextSize = 12
-copyBtn.Text = "Copy"
-copyBtn.Parent = frame
-
-local discordBtn = Instance.new("TextButton")
-discordBtn.Size = UDim2.fromOffset(95, 28)
-discordBtn.Position = UDim2.fromOffset(290, 56)
-discordBtn.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
-discordBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-discordBtn.Font = Enum.Font.Code
-discordBtn.TextSize = 12
-discordBtn.Text = "Send .txt"
-discordBtn.Parent = frame
-
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.fromOffset(60, 28)
-closeBtn.Position = UDim2.new(1, -70, 0, 56)
-closeBtn.BackgroundColor3 = Color3.fromRGB(160, 50, 50)
-closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeBtn.Font = Enum.Font.Code
-closeBtn.TextSize = 12
-closeBtn.Text = "Close"
-closeBtn.Parent = frame
-closeBtn.MouseButton1Click:Connect(function() gui:Destroy() end)
-
-local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1, -20, 1, -100)
-scroll.Position = UDim2.fromOffset(10, 92)
-scroll.BackgroundColor3 = Color3.fromRGB(15, 17, 20)
-scroll.BorderSizePixel = 0
-scroll.ScrollBarThickness = 6
-scroll.Parent = frame
-
-local box = Instance.new("TextBox")
-box.Size = UDim2.new(1, -12, 0, 2000)
-box.Position = UDim2.fromOffset(6, 4)
-box.BackgroundTransparency = 1
-box.ClearTextOnFocus = false
-box.MultiLine = true
-box.TextEditable = false
-box.TextXAlignment = Enum.TextXAlignment.Left
-box.TextYAlignment = Enum.TextYAlignment.Top
-box.TextWrapped = false
-box.Font = Enum.Font.Code
-box.TextSize = 11
-box.TextColor3 = Color3.fromRGB(215, 225, 235)
-box.Text = "Scanning..."
-box.Parent = scroll
-
-local function setStatus(msg, isErr)
-    webhookStatus.TextColor3 = isErr and Color3.fromRGB(255, 100, 100) or Color3.fromRGB(100, 240, 150)
-    webhookStatus.Text = "Status: " .. tostring(msg)
+local function post(body, ctype)
+    if not req then return 0, "no_req" end
+    local ok, r = pcall(req, {
+        Url = WEBHOOK,
+        Method = "POST",
+        Headers = { ["Content-Type"] = ctype },
+        Body = body
+    })
+    if not ok or type(r) ~= "table" then return 0, tostring(r) end
+    return tonumber(r.StatusCode) or 0, tostring(r.Body or "")
 end
 
-local function getRequestFunc()
-    if type(request) == "function" then return request end
-    if type(http_request) == "function" then return http_request end
-    if type(http) == "table" and type(http.request) == "function" then return http.request end
-    if type(syn) == "table" and type(syn.request) == "function" then return syn.request end
-    if type(fluxus) == "table" and type(fluxus.request) == "function" then return fluxus.request end
-    return nil
-end
+-- Step 1: Immediate Discord ping to verify webhook URL & executor HTTP
+local c1, b1 = post(HS:JSONEncode({ content = "Ping from " .. LP.Name }), "application/json")
+warn("[BF-Dump] Ping HTTP:", c1, b1:sub(1, 80))
 
-task.spawn(function()
-    local okRun, errRun = pcall(function()
-        -- Matches your original working require paths first, with recursive fallback
-        local repMod = ReplicatedStorage:FindFirstChild("ItemReplicationService")
-            or ReplicatedStorage:FindFirstChild("ItemReplicationService", true)
-        local cfgMod = ReplicatedStorage:FindFirstChild("ItemConfig")
-            or ReplicatedStorage:FindFirstChild("ItemConfig", true)
+-- Step 2: Scan ItemConfig
+local ItemConfig = require(RS:WaitForChild("ItemConfig"))
+local out = {}
 
-        if not repMod or not cfgMod then
-            setStatus("Modules not found in ReplicatedStorage", true)
-            return
-        end
-
-        local keysMod = repMod:FindFirstChild("KEYS") or repMod:FindFirstChild("KEYS", true)
-        local ItemReplicationService = require(repMod)
-        local ItemConfig = require(cfgMod)
-        local KEYS = keysMod and require(keysMod) or {}
-
-        local lookup = {}
-        for keyName, keyVal in pairs(KEYS) do
-            local ok, items = pcall(function()
-                return ItemReplicationService:GetItems(keyVal)
-            end)
-            if ok and type(items) == "table" then
-                for _, entry in pairs(items) do
-                    if type(entry) == "table" and entry.ItemId ~= nil then
-                        local idStr = tostring(entry.ItemId)
-                        lookup[idStr] = lookup[idStr] or {}
-                        lookup[idStr][tostring(keyName)] = entry.Value ~= nil and entry.Value or entry.Count
+for id = 1, 2000 do
+    local ok, cfg = pcall(ItemConfig.tryGet, id)
+    if ok and type(cfg) == "table" then
+        local name = (cfg.Display and cfg.Display.Name) or "nil"
+        local key = (cfg.Index and cfg.Index.StorageKey) or "nil"
+        local cat = (cfg.Index and (cfg.Index.Category or cfg.Index.Type)) or "nil"
+        local flags = {}
+        for k, v in pairs(cfg) do
+            if type(v) ~= "table" then
+                table.insert(flags, tostring(k) .. "=" .. tostring(v))
+            elseif tostring(k) ~= "Display" then
+                for k2, v2 in pairs(v) do
+                    if type(v2) ~= "table" then
+                        table.insert(flags, tostring(k) .. "." .. tostring(k2) .. "=" .. tostring(v2))
                     end
                 end
             end
         end
-
-        local function inspectConfig(cfg)
-            local info = { Category = "nil", Tradable = "unknown", ExtraFlags = {} }
-            if type(cfg) ~= "table" then return info end
-            if type(cfg.Index) == "table" then
-                info.Category = tostring(cfg.Index.Category or cfg.Index.Type or cfg.Index.Kind or "nil")
-                if cfg.Index.Tradable ~= nil then
-                    info.Tradable = tostring(cfg.Index.Tradable)
-                end
-            end
-            local function scanTable(tbl, prefix)
-                for k, v in pairs(tbl) do
-                    local kStr = tostring(k)
-                    local kLow = kStr:lower()
-                    if type(v) ~= "table" then
-                        if kLow:find("trad") or kLow:find("gift") or kLow:find("store")
-                            or kLow:find("equip") or kLow:find("categ") or kLow:find("type")
-                            or kLow:find("kind") or kLow:find("max") then
-                            table.insert(info.ExtraFlags, prefix .. kStr .. "=" .. tostring(v))
-                        end
-                        if kLow:find("trad") and type(v) == "boolean" then
-                            info.Tradable = tostring(v)
-                        end
-                    elseif prefix == "" and kStr ~= "Display" then
-                        scanTable(v, kStr .. ".")
-                    end
-                end
-            end
-            scanTable(cfg, "")
-            return info
-        end
-
-        local allRows = {}
-        for id = 1, 2000 do
-            local ok, cfg = pcall(function() return ItemConfig.tryGet(id) end)
-            if ok and type(cfg) == "table" then
-                local idStr = tostring(id)
-                local dispName = (cfg.Display and cfg.Display.Name) or "nil"
-                local storageKey = (cfg.Index and cfg.Index.StorageKey) or "nil"
-                local meta = inspectConfig(cfg)
-
-                local repTags = {}
-                if lookup[idStr] then
-                    for kName, val in pairs(lookup[idStr]) do
-                        table.insert(repTags, kName .. "=" .. tostring(val))
-                    end
-                    table.sort(repTags)
-                end
-
-                local flagStr = (#meta.ExtraFlags > 0) and table.concat(meta.ExtraFlags, ", ") or "none"
-                local repStr = (#repTags > 0) and table.concat(repTags, ", ") or "UNOWNED"
-
-                table.insert(allRows, string.format(
-                    "[%s] Id=%d | Cat=%s | Tradable=%s | Display=%s | Key=%s | Flags=[%s]",
-                    repStr, id, meta.Category, meta.Tradable, tostring(dispName), tostring(storageKey), flagStr
-                ))
-            end
-        end
-
-        local fullDumpText = table.concat(allRows, "\n")
-        local currentFilteredText = fullDumpText
-
-        if type(writefile) == "function" then
-            pcall(writefile, "bf_item_dump.txt", fullDumpText)
-        end
-
-        local function applyFilter()
-            local q = searchBox.Text:lower()
-            local out = {}
-            for _, line in ipairs(allRows) do
-                if q == "" or line:lower():find(q, 1, true) then
-                    table.insert(out, line)
-                end
-            end
-            currentFilteredText = table.concat(out, "\n")
-            box.Text = currentFilteredText
-            local heightPx = math.max(#out, 1) * 15 + 16
-            box.Size = UDim2.new(1, -12, 0, heightPx)
-            scroll.CanvasSize = UDim2.fromOffset(0, heightPx)
-        end
-
-        local function sendTxtToDiscord(textToSend, count)
-            local req = getRequestFunc()
-            if not req then
-                setStatus("Executor has no HTTP request()", true)
-                return
-            end
-
-            setStatus("Sending .txt (" .. tostring(count) .. " items)...", false)
-            local boundary = "----BFBoundary" .. tostring(math.random(100000, 999999))
-            local fileName = string.format("bf_item_dump_%s.txt", LocalPlayer.Name)
-            local payloadJson = HttpService:JSONEncode({
-                content = string.format("📦 **BF ItemConfig Dump** (`%s`) — **%d** items", LocalPlayer.Name, count)
-            })
-
-            local body = table.concat({
-                "--" .. boundary,
-                'Content-Disposition: form-data; name="payload_json"',
-                "Content-Type: application/json",
-                "",
-                payloadJson,
-                "--" .. boundary,
-                string.format('Content-Disposition: form-data; name="files[0]"; filename="%s"', fileName),
-                "Content-Type: text/plain",
-                "",
-                textToSend,
-                "--" .. boundary .. "--",
-                ""
-            }, "\r\n")
-
-            local ok, res = pcall(function()
-                return req({
-                    Url = WEBHOOK_URL,
-                    Method = "POST",
-                    Headers = {
-                        ["Content-Type"] = "multipart/form-data; boundary=" .. boundary
-                    },
-                    Body = body
-                })
-            end)
-
-            local code = (ok and type(res) == "table" and tonumber(res.StatusCode)) or 0
-            if code >= 200 and code < 300 then
-                setStatus("Sent .txt to Discord! (HTTP " .. tostring(code) .. ")", false)
-                return
-            end
-
-            -- Fallback: test plain JSON webhook POST to verify if URL is valid
-            local ok2, res2 = pcall(function()
-                return req({
-                    Url = WEBHOOK_URL,
-                    Method = "POST",
-                    Headers = { ["Content-Type"] = "application/json" },
-                    Body = HttpService:JSONEncode({
-                        content = "⚠️ File upload returned HTTP " .. tostring(code) .. " (" .. tostring(res and res.Body or res):sub(1, 120) .. ")"
-                    })
-                })
-            end)
-            local code2 = (ok2 and type(res2) == "table" and tonumber(res2.StatusCode)) or 0
-            setStatus("File HTTP=" .. tostring(code) .. " | Msg HTTP=" .. tostring(code2), true)
-        end
-
-        searchBox:GetPropertyChangedSignal("Text"):Connect(applyFilter)
-        copyBtn.MouseButton1Click:Connect(function()
-            local clip = setclipboard or toclipboard
-            if clip then
-                clip(currentFilteredText)
-                copyBtn.Text = "Copied!"
-                task.delay(1.2, function() if copyBtn then copyBtn.Text = "Copy" end end)
-            end
-        end)
-        discordBtn.MouseButton1Click:Connect(function()
-            local count = select(2, currentFilteredText:gsub("\n", "\n")) + 1
-            sendTxtToDiscord(currentFilteredText, count)
-        end)
-
-        applyFilter()
-        sendTxtToDiscord(fullDumpText, #allRows)
-    end)
-
-    if not okRun then
-        setStatus("Error: " .. tostring(errRun), true)
+        table.insert(out, string.format("Id=%d | Cat=%s | Disp=%s | Key=%s | %s",
+            id, tostring(cat), tostring(name), tostring(key), table.concat(flags, ", ")))
     end
-end)
+end
+
+local txt = table.concat(out, "\n")
+if writefile then pcall(writefile, "bf_dump.txt", txt) end
+
+-- Step 3: Upload as .txt file
+local bnd = "----BF" .. tostring(math.random(100000, 999999))
+local multipart = table.concat({
+    "--" .. bnd,
+    'Content-Disposition: form-data; name="file"; filename="bf_dump.txt"',
+    "Content-Type: text/plain",
+    "",
+    txt,
+    "--" .. bnd .. "--",
+    ""
+}, "\r\n")
+
+local c2, b2 = post(multipart, "multipart/form-data; boundary=" .. bnd)
+warn("[BF-Dump] File HTTP:", c2, b2:sub(1, 80))
