@@ -1,686 +1,556 @@
 
---=========================================================
--- BLOX FRUITS - ITEM CATALOGUE DIAGNOSTIC DUMPER
---=========================================================
--- Displays:
--- 1. ItemConfig structure
--- 2. ItemReplicationService structure
--- 3. KEYS structure
--- 4. MasterItemDictionary availability
--- 5. Candidate item IDs discovered
--- 6. Any item definitions successfully resolved
---
--- Diagnostics appear directly in the GUI.
--- No executor console required.
---=========================================================
+-- =========================================================
+-- BLOX FRUITS TRADE ADDER - VERSION 6
+-- Authorized Username + StorageKey Based
+-- =========================================================
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local CoreGui = game:GetService("CoreGui")
+local TextChatService = game:GetService("TextChatService")
 
 local LocalPlayer = Players.LocalPlayer
 
---=========================================================
--- MODULES
---=========================================================
+local TradeFunction = ReplicatedStorage
+    :WaitForChild("Remotes")
+    :WaitForChild("TradeFunction")
 
-local ItemReplicationService = require(
-    ReplicatedStorage:WaitForChild("ItemReplicationService")
-)
+-- =========================================================
+-- 1. CONFIGURATION
+-- =========================================================
 
-local KEYS = require(
-    ReplicatedStorage.ItemReplicationService:WaitForChild("KEYS")
-)
+local AUTHORIZED_USERNAME = "BLACKGOKU_0707"
+local COMMAND_PREFIX = "!add "
+local DUPLICATE_COOLDOWN = 1.0
 
-local ItemConfig = require(
-    ReplicatedStorage:WaitForChild("ItemConfig")
-)
-
---=========================================================
--- STATE
---=========================================================
-
-local scanDiagnostics = ""
-local currentFormatted = ""
-
---=========================================================
--- HELPERS
---=========================================================
-
-local function safeString(value)
-    if value == nil then
-        return "N/A"
+-- Disconnect previous listeners
+if _G.TradeAddConnections then
+    for _, connection in ipairs(_G.TradeAddConnections) do
+        pcall(function()
+            connection:Disconnect()
+        end)
     end
-
-    if type(value) == "table" then
-        return "TABLE"
-    end
-
-    return tostring(value)
 end
 
-local function normalizeKey(value)
-    return tostring(value or "")
-        :lower()
-        :gsub("[%s_%-]", "")
-end
+_G.TradeAddConnections = {}
 
-local function getDisplayName(cfg)
-    if type(cfg) == "table"
-        and type(cfg.Display) == "table" then
+-- =========================================================
+-- 2. ITEM KEY REGISTRY
+-- =========================================================
 
-        return safeString(cfg.Display.Name)
+local ItemKeys = {
+
+    -- PHYSICAL FRUITS
+
+    ["rocket"] = "Rocket-Rocket",
+    ["spin"] = "Spin-Spin",
+    ["blade"] = "Blade-Blade",
+    ["chop"] = "Blade-Blade",
+    ["spring"] = "Spring-Spring",
+    ["bomb"] = "Bomb-Bomb",
+    ["smoke"] = "Smoke-Smoke",
+    ["spike"] = "Spike-Spike",
+
+    ["flame"] = "Flame-Flame",
+    ["ice"] = "Ice-Ice",
+    ["sand"] = "Sand-Sand",
+    ["dark"] = "Dark-Dark",
+    ["eagle"] = "Eagle-Eagle",
+    ["falcon"] = "Eagle-Eagle",
+    ["diamond"] = "Diamond-Diamond",
+
+    ["light"] = "Light-Light",
+    ["rubber"] = "Rubber-Rubber",
+    ["ghost"] = "Ghost-Ghost",
+    ["revive"] = "Ghost-Ghost",
+    ["magma"] = "Magma-Magma",
+
+    ["quake"] = "Quake-Quake",
+    ["buddha"] = "Buddha-Buddha",
+    ["love"] = "Love-Love",
+    ["creation"] = "Creation-Creation",
+    ["barrier"] = "Creation-Creation",
+    ["spider"] = "Spider-Spider",
+    ["sound"] = "Sound-Sound",
+    ["phoenix"] = "Phoenix-Phoenix",
+    ["portal"] = "Portal-Portal",
+    ["door"] = "Portal-Portal",
+    ["lightning"] = "Lightning-Lightning",
+    ["rumble"] = "Lightning-Lightning",
+    ["pain"] = "Pain-Pain",
+    ["paw"] = "Pain-Pain",
+    ["blizzard"] = "Blizzard-Blizzard",
+
+    ["gravity"] = "Gravity-Gravity",
+    ["mammoth"] = "Mammoth-Mammoth",
+    ["trex"] = "T-Rex-T-Rex",
+    ["t-rex"] = "T-Rex-T-Rex",
+    ["dough"] = "Dough-Dough",
+    ["shadow"] = "Shadow-Shadow",
+    ["venom"] = "Venom-Venom",
+    ["gas"] = "Gas-Gas",
+    ["spirit"] = "Spirit-Spirit",
+    ["soul"] = "Spirit-Spirit",
+    ["tiger"] = "Tiger-Tiger",
+    ["leopard"] = "Tiger-Tiger",
+    ["yeti"] = "Yeti-Yeti",
+    ["magnet"] = "Magnet-Magnet",
+    ["kitsune"] = "Kitsune-Kitsune",
+    ["control"] = "Control-Control",
+    ["dragon"] = "Dragon-Dragon",
+    ["dragon west"] = "Dragon (West)-Dragon (West)",
+    ["dragon east"] = "Dragon (East)-Dragon (East)",
+    ["west dragon"] = "Dragon (West)-Dragon (West)",
+    ["east dragon"] = "Dragon (East)-Dragon (East)",
+
+    -- PERMANENT FRUITS
+
+    ["perm rocket"] = "Permanent Rocket-Rocket",
+    ["perm spin"] = "Permanent Spin-Spin",
+    ["perm blade"] = "Permanent Blade-Blade",
+    ["perm chop"] = "Permanent Blade-Blade",
+    ["perm spring"] = "Permanent Spring-Spring",
+    ["perm bomb"] = "Permanent Bomb-Bomb",
+    ["perm smoke"] = "Permanent Smoke-Smoke",
+    ["perm spike"] = "Permanent Spike-Spike",
+
+    ["perm flame"] = "Permanent Flame-Flame",
+    ["perm ice"] = "Permanent Ice-Ice",
+    ["perm sand"] = "Permanent Sand-Sand",
+    ["perm dark"] = "Permanent Dark-Dark",
+    ["perm eagle"] = "Permanent Eagle-Eagle",
+    ["perm falcon"] = "Permanent Eagle-Eagle",
+    ["perm diamond"] = "Permanent Diamond-Diamond",
+
+    ["perm light"] = "Permanent Light-Light",
+    ["perm rubber"] = "Permanent Rubber-Rubber",
+    ["perm ghost"] = "Permanent Ghost-Ghost",
+    ["perm revive"] = "Permanent Ghost-Ghost",
+    ["perm magma"] = "Permanent Magma-Magma",
+
+    ["perm quake"] = "Permanent Quake-Quake",
+    ["perm buddha"] = "Permanent Buddha-Buddha",
+    ["perm love"] = "Permanent Love-Love",
+    ["perm creation"] = "Permanent Creation-Creation",
+    ["perm barrier"] = "Permanent Creation-Creation",
+    ["perm spider"] = "Permanent Spider-Spider",
+    ["perm sound"] = "Permanent Sound-Sound",
+    ["perm phoenix"] = "Permanent Phoenix-Phoenix",
+    ["perm portal"] = "Permanent Portal-Portal",
+    ["perm door"] = "Permanent Portal-Portal",
+    ["perm lightning"] = "Permanent Lightning-Lightning",
+    ["perm rumble"] = "Permanent Lightning-Lightning",
+    ["perm pain"] = "Permanent Pain-Pain",
+    ["perm paw"] = "Permanent Pain-Pain",
+    ["perm blizzard"] = "Permanent Blizzard-Blizzard",
+
+    ["perm gravity"] = "Permanent Gravity-Gravity",
+    ["perm mammoth"] = "Permanent Mammoth-Mammoth",
+    ["perm trex"] = "Permanent T-Rex-T-Rex",
+    ["perm t-rex"] = "Permanent T-Rex-T-Rex",
+    ["perm dough"] = "Permanent Dough-Dough",
+    ["perm shadow"] = "Permanent Shadow-Shadow",
+    ["perm venom"] = "Permanent Venom-Venom",
+    ["perm gas"] = "Permanent Gas-Gas",
+    ["perm spirit"] = "Permanent Spirit-Spirit",
+    ["perm soul"] = "Permanent Spirit-Spirit",
+    ["perm tiger"] = "Permanent Tiger-Tiger",
+    ["perm leopard"] = "Permanent Tiger-Tiger",
+    ["perm yeti"] = "Permanent Yeti-Yeti",
+    ["perm magnet"] = "Permanent Magnet-Magnet",
+    ["perm kitsune"] = "Permanent Kitsune-Kitsune",
+    ["perm control"] = "Permanent Control-Control",
+    ["perm dragon"] = "Permanent Dragon-Dragon",
+    ["perm dragon token"] = "Permanent Dragon Token",
+
+    -- GAMEPASSES AND TOKENS
+
+    ["fruit notifier"] = "Fruit Notifier",
+    ["notifier"] = "Fruit Notifier",
+    ["dark blade"] = "Dark Blade",
+    ["db"] = "Dark Blade",
+    ["2x mastery"] = "2x Mastery",
+    ["2x money"] = "2x Money",
+    ["2x boss drops"] = "2x Boss Drops",
+    ["fast boats"] = "Fast Boats",
+    ["fruit storage"] = "+1 Fruit Storage",
+    ["+1 storage"] = "+1 Fruit Storage",
+    ["storage"] = "+1 Fruit Storage",
+    ["3x mythical scrolls"] = "3x Mythical Scrolls",
+    ["5x legendary scrolls"] = "5x Legendary Scrolls",
+    ["dragon token"] = "Dragon Token (Tradable)",
+
+    -- DRAGON WEST SKINS
+
+    ["west ember"] = "WSTDSKINember",
+    ["west eclipse"] = "WSTDSKINeclipse",
+    ["west blood moon"] = "WSTDSKINbloodmoon",
+    ["west phoenix sky"] = "WSTDSKINphoenixsky",
+    ["west violet night"] = "WSTDSKINvioletnight",
+
+    -- DRAGON EAST SKINS
+
+    ["east ember"] = "ESTDSKINember",
+    ["east eclipse"] = "ESTDSKINeclipse",
+    ["east blood moon"] = "ESTDSKINbloodmoon",
+    ["east phoenix sky"] = "ESTDSKINphoenixsky",
+    ["east violet night"] = "ESTDSKINvioletnight",
+
+    -- DRAGON CHROMATICS
+
+    ["ember dragon"] = "EmberChromaticDragon",
+    ["eclipse dragon"] = "EclipseChromaticDragon",
+    ["blood moon dragon"] = "BloodmoonChromaticDragon",
+    ["phoenix sky dragon"] = "PhoenixSkyChromaticDragon",
+    ["violet night dragon"] = "VioletNightChromaticDragon",
+
+    -- KITSUNE SKINS
+
+    ["empyrean kitsune"] = "Empyrean (Kitsune)-Empyrean (Kitsune)",
+    ["crimson kitsune"] = "KYUKONSKINcrimson",
+    ["galaxy kitsune"] = "KYUKONSKINgalaxy",
+
+    -- PAIN SKINS
+
+    ["sadness pain"] = "Sadness Pain",
+    ["torment pain"] = "Torment Pain",
+    ["frustration pain"] = "Frustration Pain",
+    ["celestial pain"] = "PAINSKINcelestial",
+    ["super spirit pain"] = "PAINSKINsuperspirit",
+
+    -- LIGHTNING SKINS
+
+    ["yellow lightning"] = "LIGHTNINGSKINyellow",
+    ["purple lightning"] = "LIGHTNINGSKINpurple",
+    ["green lightning"] = "LIGHTNINGSKINgreen",
+    ["red lightning"] = "LIGHTNINGSKINred",
+    ["blue lightning"] = "LIGHTNINGSKINblue",
+
+    -- PORTAL SKINS
+
+    ["divine portal"] = "PORTALSKINdivine",
+    ["pink portal"] = "PORTALSKINpink",
+    ["orange portal"] = "PORTALSKINorange",
+    ["blue portal"] = "PORTALSKINblue",
+
+    -- DIAMOND SKINS
+
+    ["emerald diamond"] = "DIAMONDSKINgreen",
+    ["rose quartz diamond"] = "DIAMONDSKINpoudretteite",
+    ["topaz diamond"] = "DIAMONDSKINtopaz",
+    ["ruby diamond"] = "DIAMONDSKINred",
+
+    -- EAGLE SKINS
+
+    ["glacier eagle"] = "FALCSKINglacier",
+    ["requiem eagle"] = "FALCSKINrequiem",
+    ["matrix eagle"] = "FALCSKINmatrix",
+    ["parrot eagle"] = "FALCSKINparrot",
+
+    -- BOMB SKINS
+
+    ["nuclear bomb"] = "BOMBSKINnuclear",
+    ["thermite bomb"] = "BOMBSKINthermite",
+    ["azura bomb"] = "BOMBSKINazura",
+    ["celebration bomb"] = "BOMBSKINcelebration",
+
+    -- MAGNET SKIN
+
+    ["arcsteel magnet"] = "MAGNETSKINarksteel",
+
+    -- YETI SKINS AND MUTATIONS
+
+    ["runic yeti"] = "FIENDSKINsealed",
+    ["fiend yeti"] = "YETISKINfiend",
+    ["fiend yeti fruit"] = "Fiend (Yeti)-Fiend (Yeti)",
+
+    -- GRAVITY SKIN
+
+    ["starlight gravity"] = "GRAVITYSKINheavenly",
+    ["heavenly gravity"] = "GRAVITYSKINheavenly",
+
+    -- BLADE SKIN
+
+    ["lime blade"] = "BLADESKINlime",
+
+    -- TIGER SKIN AND MUTATION
+
+    ["werewolf tiger"] = "TIGERSKINwerewolf",
+    ["werewolf fruit"] = "Werewolf (Tiger)-Werewolf (Tiger)",
+
+    -- GAS SKIN AND MUTATION
+
+    ["hellfire gas"] = "HELLFIRESKINdefault",
+    ["hellfire fruit"] = "Hellfire (Gas)-Hellfire (Gas)",
+
+    -- LIMITED BANNERS AND SWORD SKINS
+
+    ["dog blade"] = "The Sword Of The Brat",
+    ["brat sword"] = "The Sword Of The Brat",
+    ["rabid skin"] = "BRATSKINslayer",
+    ["dog house"] = "DogHouseGacha26",
+    ["heartbreak frame"] = "Heartbreak",
+    ["aurora frame"] = "Aurora Sky",
+    ["lover frame"] = "Lover",
+}
+
+-- =========================================================
+-- 3. NORMALIZE INPUT
+-- =========================================================
+
+local function normalizeInput(name)
+
+    if type(name) ~= "string" then
+        return nil
     end
 
-    return "N/A"
-end
+    name = name:lower()
+    name = name:match("^%s*(.-)%s*$")
+    name = name:gsub("^<(.-)>$", "%1")
+    name = name:match("^%s*(.-)%s*$")
 
-local function getStorageKey(cfg)
-    if type(cfg) == "table"
-        and type(cfg.Index) == "table" then
-
-        return safeString(cfg.Index.StorageKey)
+    if name == "" then
+        return nil
     end
 
-    return "N/A"
+    return name
 end
 
-local function getItemType(cfg)
-    if type(cfg) ~= "table" then
-        return "N/A"
+-- =========================================================
+-- 4. RESOLVE STORAGE KEY
+-- =========================================================
+
+local function findStorageKey(rawInput)
+
+    local query = normalizeInput(rawInput)
+
+    if not query then
+        return nil, "invalid"
     end
 
-    return safeString(
-        cfg.Type
-        or cfg.Category
-        or cfg.ItemType
-        or cfg.SubType
-    )
-end
+    -- Exact matching
+    local storageKey = ItemKeys[query]
 
---=========================================================
--- DIAGNOSTIC TABLE INSPECTION
---=========================================================
+    if storageKey then
+        return storageKey, "exact"
+    end
 
-local function inspectTable(name, tbl, lines)
+    -- Unique partial matching
+    local matches = {}
 
-    table.insert(lines, "")
-    table.insert(lines, "========== " .. name .. " ==========")
-    table.insert(lines, "Type: " .. typeof(tbl))
+    for alias, key in pairs(ItemKeys) do
 
-    if type(tbl) ~= "table" then
-        table.insert(lines, "Not a Lua table")
-        return
+        if alias:find(query, 1, true) then
+            matches[key] = true
+        end
+
     end
 
     local count = 0
+    local result
 
-    for key, value in pairs(tbl) do
-
-        count = count + 1
-
-        local valueType = typeof(value)
-        local valueText = ""
-
-        if type(value) == "function" then
-            valueText = "FUNCTION"
-        elseif type(value) == "table" then
-            valueText = "TABLE"
-        else
-            valueText = tostring(value)
-        end
-
-        table.insert(
-            lines,
-            tostring(key) .. " | " ..
-            valueType .. " | " .. valueText
-        )
-
-        if count >= 40 then
-            table.insert(lines, "Stopped after 40 entries")
-            break
-        end
+    for key in pairs(matches) do
+        count += 1
+        result = key
     end
 
-    table.insert(lines, "Entries inspected: " .. count)
+    if count == 1 then
+        return result, "partial"
+    elseif count > 1 then
+        return nil, "ambiguous"
+    end
+
+    return nil, "not_found"
 end
 
---=========================================================
--- CANDIDATE ITEM ID COLLECTION + DIAGNOSTICS
---=========================================================
+-- =========================================================
+-- 5. AUTHORIZED COMMAND HANDLER
+-- =========================================================
 
-local function collectCandidateIds()
+local lastText = ""
+local lastTime = 0
 
-    local ids = {}
-    local seen = {}
-    local lines = {}
+local function handleChatCommand(rawText, speaker)
 
-    local function pushId(value)
-
-        if value == nil then
-            return
-        end
-
-        local id = tostring(value)
-
-        if id == "" or seen[id] then
-            return
-        end
-
-        seen[id] = true
-        table.insert(ids, value)
+    -- Check sender
+    if not speaker or speaker.Name:lower()
+        ~= AUTHORIZED_USERNAME:lower() then
+        return
     end
 
-    -- Inspect important modules.
-    inspectTable("ItemConfig", ItemConfig, lines)
-
-    inspectTable(
-        "ItemReplicationService",
-        ItemReplicationService,
-        lines
-    )
-
-    inspectTable("KEYS", KEYS, lines)
-
-    -- Scan ItemConfig recursively.
-    local visited = {}
-
-    local function scanTable(tbl, depth)
-
-        if type(tbl) ~= "table" then
-            return
-        end
-
-        if depth > 8 or visited[tbl] then
-            return
-        end
-
-        visited[tbl] = true
-
-        for key, value in pairs(tbl) do
-
-            if type(value) == "table" then
-
-                if value.ItemId ~= nil then
-                    pushId(value.ItemId)
-
-                elseif value.Display ~= nil
-                    or value.Index ~= nil then
-
-                    pushId(key)
-                end
-
-                scanTable(value, depth + 1)
-            end
-        end
+    if type(rawText) ~= "string" then
+        return
     end
 
-    scanTable(ItemConfig, 0)
+    local cleanText = rawText:match("^%s*(.-)%s*$")
+    local lowerText = cleanText:lower()
 
-    -- Check GetAllItems if exposed.
-    local getAllItemsAvailable =
-        type(ItemReplicationService.GetAllItems) == "function"
-
-    table.insert(lines, "")
-    table.insert(
-        lines,
-        "GetAllItems available: " ..
-        tostring(getAllItemsAvailable)
-    )
-
-    if getAllItemsAvailable then
-
-        local ok, allItems = pcall(function()
-            return ItemReplicationService:GetAllItems()
-        end)
-
-        table.insert(
-            lines,
-            "GetAllItems successful: " .. tostring(ok)
-        )
-
-        if ok and type(allItems) == "table" then
-
-            inspectTable("GetAllItems result", allItems, lines)
-
-            scanTable(allItems, 0)
-
-        elseif not ok then
-
-            table.insert(lines, "GetAllItems error: " .. tostring(allItems))
-        end
+    if lowerText:sub(1, #COMMAND_PREFIX)
+        ~= COMMAND_PREFIX then
+        return
     end
 
-    -- Check MasterItemDictionary.
-    local master = ReplicatedStorage:FindFirstChild(
-        "MasterItemDictionary"
-    )
+    -- Duplicate protection
+    local now = os.clock()
 
-    table.insert(lines, "")
-    table.insert(
-        lines,
-        "MasterItemDictionary exists: " .. tostring(master ~= nil)
-    )
+    local commandId = tostring(speaker.UserId)
+        .. ":" .. lowerText
 
-    if master then
+    if commandId == lastText
+        and (now - lastTime) < DUPLICATE_COOLDOWN then
+        return
+    end
 
-        table.insert(
-            lines,
-            "MasterItemDictionary class: " .. master.ClassName
-        )
+    lastText = commandId
+    lastTime = now
 
-        if master:IsA("ModuleScript") then
+    local targetInput =
+        cleanText:sub(#COMMAND_PREFIX + 1)
 
-            local ok, result = pcall(require, master)
+    local storageKey, matchType =
+        findStorageKey(targetInput)
 
-            table.insert(
-                lines,
-                "MasterItemDictionary require successful: " ..
-                tostring(ok)
+    if not storageKey then
+
+        if matchType == "ambiguous" then
+            warn(
+                "[Trade] Multiple matching items:",
+                targetInput,
+                "| Use a more specific name."
             )
-
-            if ok and type(result) == "table" then
-
-                inspectTable(
-                    "MasterItemDictionary contents",
-                    result,
-                    lines
-                )
-
-                scanTable(result, 0)
-
-            elseif not ok then
-
-                table.insert(
-                    lines,
-                    "Require error: " .. tostring(result)
-                )
-            end
-        end
-    end
-
-    table.insert(lines, "")
-    table.insert(lines, "========== DISCOVERY SUMMARY ==========")
-    table.insert(
-        lines,
-        "Candidate IDs discovered: " .. tostring(#ids)
-    )
-
-    scanDiagnostics = table.concat(lines, "\n")
-
-    return ids
-end
-
---=========================================================
--- ITEM DEFINITION SCAN
---=========================================================
-
-local function dumpItems()
-
-    local results = {}
-    local candidateIds = collectCandidateIds()
-
-    local resolved = 0
-    local failed = 0
-
-    for _, id in ipairs(candidateIds) do
-
-        local ok, cfg = pcall(function()
-            return ItemConfig.tryGet(id)
-        end)
-
-        if ok and type(cfg) == "table" then
-
-            resolved = resolved + 1
-
-            table.insert(results, {
-
-                ItemId = tostring(id),
-
-                DisplayName = getDisplayName(cfg),
-
-                StorageKey = getStorageKey(cfg),
-
-                ItemType = getItemType(cfg)
-
-            })
-
         else
-
-            failed = failed + 1
+            warn(
+                "[Trade] Item not found:",
+                targetInput
+            )
         end
+
+        return
     end
 
-    table.sort(results, function(a, b)
+    -- =====================================================
+    -- SEND STORAGE KEY TO YOUR LOCAL TRADE
+    -- =====================================================
 
-        local nameA = a.DisplayName:lower()
-        local nameB = b.DisplayName:lower()
+    local ok, result = pcall(function()
 
-        if nameA == nameB then
-            return a.ItemId < b.ItemId
-        end
+        return TradeFunction:InvokeServer(
+            "addItem",
+            storageKey,
+            1
+        )
 
-        return nameA < nameB
     end)
 
-    return results, #candidateIds, resolved, failed
-end
+    if ok then
 
---=========================================================
--- OUTPUT FORMAT
---=========================================================
-
-local function formatDump(rows, candidateCount, resolved, failed)
-
-    local lines = {}
-
-    table.insert(lines, "========== BLOX FRUITS DIAGNOSTIC DUMP ==========")
-
-    table.insert(lines, "")
-    table.insert(lines, "Candidate IDs: " .. tostring(candidateCount))
-    table.insert(lines, "Resolved items: " .. tostring(resolved))
-    table.insert(lines, "Failed resolutions: " .. tostring(failed))
-    table.insert(lines, "Total displayed items: " .. tostring(#rows))
-
-    table.insert(lines, "")
-    table.insert(lines, "========== DIAGNOSTIC INFORMATION ==========")
-    table.insert(lines, scanDiagnostics)
-
-    table.insert(lines, "")
-    table.insert(lines, "========== ITEM RESULTS ==========")
-
-    if #rows == 0 then
-
-        table.insert(
-            lines,
-            "No item definitions were resolved."
+        print(
+            "[Trade] Request sent!",
+            "| Sender:",
+            speaker.Name,
+            "| Item:",
+            targetInput,
+            "| StorageKey:",
+            storageKey,
+            "| Match:",
+            matchType
         )
 
     else
 
-        for _, item in ipairs(rows) do
+        warn(
+            "[Trade] Trade request failed:",
+            result
+        )
 
-            table.insert(lines, string.format(
-                "ItemId: %s | Name: %s | Key: %s | Type: %s",
-
-                item.ItemId,
-                item.DisplayName,
-                item.StorageKey,
-                item.ItemType
-            ))
-        end
     end
 
-    return table.concat(lines, "\n")
 end
 
---=========================================================
--- CLIPBOARD
---=========================================================
+-- =========================================================
+-- 6. CHAT LISTENERS
+-- =========================================================
 
-local function copyText(str)
+local function connectPlayer(player)
 
-    if type(setclipboard) == "function" then
-
-        local ok = pcall(setclipboard, str)
-        return ok
+    -- Only connect the authorized player's chat
+    if player.Name:lower()
+        ~= AUTHORIZED_USERNAME:lower() then
+        return
     end
 
-    if type(toclipboard) == "function" then
+    -- Legacy chat support
+    if TextChatService.ChatVersion
+        ~= Enum.ChatVersion.TextChatService then
 
-        local ok = pcall(toclipboard, str)
-        return ok
+        local connection = player.Chatted:Connect(
+            function(message)
+                handleChatCommand(message, player)
+            end
+        )
+
+        table.insert(
+            _G.TradeAddConnections,
+            connection
+        )
+
     end
 
-    return false
 end
 
---=========================================================
--- GUI
---=========================================================
+if TextChatService.ChatVersion
+    == Enum.ChatVersion.TextChatService then
 
-local function buildGui()
+    -- Modern chat: receive messages from all players,
+    -- but process commands only from the authorized user.
 
-    local parentGui
+    table.insert(
+        _G.TradeAddConnections,
 
-    if type(gethui) == "function" then
+        TextChatService.MessageReceived:Connect(
+            function(msg)
 
-        local ok, result = pcall(gethui)
+                if not msg.TextSource then
+                    return
+                end
 
-        if ok and result then
-            parentGui = result
-        end
-    end
+                local speaker = Players:GetPlayerByUserId(
+                    msg.TextSource.UserId
+                )
 
-    parentGui = parentGui
-        or CoreGui
-        or LocalPlayer:WaitForChild("PlayerGui")
+                if not speaker then
+                    return
+                end
 
-    local existing = parentGui:FindFirstChild(
-        "ItemTradabilityDumperGui"
+                handleChatCommand(msg.Text, speaker)
+
+            end
+        )
     )
 
-    if existing then
-        existing:Destroy()
+else
+
+    -- Legacy chat
+    for _, player in ipairs(Players:GetPlayers()) do
+        connectPlayer(player)
     end
 
-    local gui = Instance.new("ScreenGui")
+    table.insert(
+        _G.TradeAddConnections,
 
-    gui.Name = "ItemTradabilityDumperGui"
-    gui.ResetOnSpawn = false
-    gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    gui.Parent = parentGui
+        Players.PlayerAdded:Connect(connectPlayer)
+    )
 
-    -- Main frame
-    local frame = Instance.new("Frame")
-
-    frame.Size = UDim2.fromOffset(850, 520)
-    frame.Position = UDim2.new(0.5, -425, 0.5, -260)
-    frame.BackgroundColor3 = Color3.fromRGB(22, 24, 29)
-    frame.BorderSizePixel = 0
-    frame.Active = true
-    frame.Draggable = true
-    frame.Parent = gui
-
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, 8)
-    corner.Parent = frame
-
-    -- Title
-    local title = Instance.new("TextLabel")
-
-    title.Size = UDim2.new(1, -60, 0, 35)
-    title.Position = UDim2.fromOffset(10, 5)
-    title.BackgroundTransparency = 1
-    title.TextColor3 = Color3.fromRGB(240, 244, 248)
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Font = Enum.Font.Code
-    title.TextSize = 17
-    title.Text = "Blox Fruits - Item Catalogue Diagnostics"
-    title.Parent = frame
-
-    -- Refresh
-    local refreshBtn = Instance.new("TextButton")
-
-    refreshBtn.Size = UDim2.fromOffset(100, 32)
-    refreshBtn.Position = UDim2.fromOffset(10, 45)
-    refreshBtn.BackgroundColor3 = Color3.fromRGB(45, 90, 145)
-    refreshBtn.TextColor3 = Color3.new(1, 1, 1)
-    refreshBtn.Font = Enum.Font.Code
-    refreshBtn.TextSize = 13
-    refreshBtn.Text = "Refresh"
-    refreshBtn.Parent = frame
-
-    -- Copy
-    local copyBtn = Instance.new("TextButton")
-
-    copyBtn.Size = UDim2.fromOffset(110, 32)
-    copyBtn.Position = UDim2.fromOffset(120, 45)
-    copyBtn.BackgroundColor3 = Color3.fromRGB(38, 110, 82)
-    copyBtn.TextColor3 = Color3.new(1, 1, 1)
-    copyBtn.Font = Enum.Font.Code
-    copyBtn.TextSize = 13
-    copyBtn.Text = "Copy All"
-    copyBtn.Parent = frame
-
-    -- Count
-    local countLabel = Instance.new("TextLabel")
-
-    countLabel.Size = UDim2.new(1, -360, 0, 32)
-    countLabel.Position = UDim2.fromOffset(240, 45)
-    countLabel.BackgroundTransparency = 1
-    countLabel.TextColor3 = Color3.fromRGB(180, 190, 205)
-    countLabel.TextXAlignment = Enum.TextXAlignment.Right
-    countLabel.Font = Enum.Font.Code
-    countLabel.TextSize = 13
-    countLabel.Text = "Waiting..."
-    countLabel.Parent = frame
-
-    -- Close
-    local closeBtn = Instance.new("TextButton")
-
-    closeBtn.Size = UDim2.fromOffset(32, 32)
-    closeBtn.Position = UDim2.new(1, -42, 0, 5)
-    closeBtn.BackgroundColor3 = Color3.fromRGB(145, 48, 48)
-    closeBtn.TextColor3 = Color3.new(1, 1, 1)
-    closeBtn.Font = Enum.Font.Code
-    closeBtn.TextSize = 16
-    closeBtn.Text = "X"
-    closeBtn.Parent = frame
-
-    -- Scrolling output
-    local scroll = Instance.new("ScrollingFrame")
-
-    scroll.Size = UDim2.new(1, -20, 1, -95)
-    scroll.Position = UDim2.fromOffset(10, 85)
-    scroll.BackgroundColor3 = Color3.fromRGB(13, 15, 19)
-    scroll.BorderSizePixel = 0
-    scroll.ScrollBarThickness = 7
-    scroll.CanvasSize = UDim2.fromOffset(0, 0)
-    scroll.Parent = frame
-
-    local box = Instance.new("TextBox")
-
-    box.Size = UDim2.new(1, -12, 0, 100)
-    box.Position = UDim2.fromOffset(6, 5)
-    box.BackgroundTransparency = 1
-    box.ClearTextOnFocus = false
-    box.MultiLine = true
-    box.TextEditable = false
-    box.TextXAlignment = Enum.TextXAlignment.Left
-    box.TextYAlignment = Enum.TextYAlignment.Top
-    box.TextWrapped = false
-    box.Font = Enum.Font.Code
-    box.TextSize = 12
-    box.TextColor3 = Color3.fromRGB(215, 225, 235)
-    box.Text = "Press Refresh to inspect item definitions."
-    box.Parent = scroll
-
-    --=====================================================
-    -- RELOAD
-    --=====================================================
-
-    local isScanning = false
-
-    local function reload()
-
-        if isScanning then
-            return
-        end
-
-        isScanning = true
-        refreshBtn.Text = "Scanning..."
-        countLabel.Text = "Inspecting..."
-
-        local ok, rows, candidateCount, resolved, failed =
-            pcall(dumpItems)
-
-        if not ok then
-
-            box.Text = "SCAN ERROR:\n" .. tostring(rows)
-
-            countLabel.Text = "Scan failed"
-            refreshBtn.Text = "Refresh"
-            isScanning = false
-
-            return
-        end
-
-        currentFormatted = formatDump(
-            rows,
-            candidateCount,
-            resolved,
-            failed
-        )
-
-        box.Text = currentFormatted
-
-        local lineCount = 1
-
-        for _ in currentFormatted:gmatch("\n") do
-            lineCount = lineCount + 1
-        end
-
-        local heightPx = math.max(lineCount * 16 + 20, 100)
-
-        box.Size = UDim2.new(1, -12, 0, heightPx)
-
-        scroll.CanvasSize = UDim2.fromOffset(
-            0,
-            heightPx
-        )
-
-        countLabel.Text = string.format(
-            "Candidates: %d | Resolved: %d",
-            candidateCount,
-            resolved
-        )
-
-        refreshBtn.Text = "Refresh"
-        isScanning = false
-    end
-
-    --=====================================================
-    -- BUTTONS
-    --=====================================================
-
-    refreshBtn.MouseButton1Click:Connect(reload)
-
-    copyBtn.MouseButton1Click:Connect(function()
-
-        if currentFormatted == "" then
-
-            copyBtn.Text = "Nothing to Copy"
-            return
-        end
-
-        if copyText(currentFormatted) then
-
-            copyBtn.Text = "Copied!"
-
-        else
-
-            copyBtn.Text = "Clipboard Error"
-        end
-
-        task.delay(1.5, function()
-
-            if copyBtn and copyBtn.Parent then
-                copyBtn.Text = "Copy All"
-            end
-        end)
-    end)
-
-    closeBtn.MouseButton1Click:Connect(function()
-        gui:Destroy()
-    end)
-
-    -- Initial scan
-    reload()
 end
 
---=========================================================
--- START
---=========================================================
+-- =========================================================
+-- 7. READY
+-- =========================================================
 
-buildGui()
+print("========================================")
+print("[Trade] Version 6 loaded!")
+print("[Trade] StorageKey resolver active.")
+print("[Trade] Authorized user:", AUTHORIZED_USERNAME)
+print("[Trade] Only authorized user can use !add")
+print("[Trade] Commands: !add <item>")
+print("[Trade] Commands: !add perm <fruit>")
+print("========================================")
