@@ -345,32 +345,40 @@ local ItemList = {
 -- =========================================================
 
 local Aliases = {
-    ["leo"]            = "leopard",
-    ["t rex"]          = "trex",
-    ["t-rex"]          = "trex",
-    ["lighting"]       = "lightning",
-    ["perm chop"]      = "perm blade",
-    ["perm falcon"]    = "perm eagle",
-    ["perm revive"]    = "perm ghost",
-    ["perm barrier"]   = "perm creation",
-    ["perm door"]      = "perm portal",
-    ["perm rumble"]    = "perm lightning",
-    ["perm paw"]       = "perm pain",
-    ["perm soul"]      = "perm spirit",
-    ["perm leopard"]   = "perm tiger",
-    ["perm leo"]       = "perm tiger",
-    ["perm t-rex"]     = "perm trex",
-    ["perm t rex"]     = "perm trex",
+    ["leo"]              = "leopard",
+    ["t rex"]            = "trex",
+    ["t-rex"]            = "trex",
+    ["lighting"]         = "lightning",
+    ["yellow lighting"]  = "yellow lightning",
+    ["purple lighting"]  = "purple lightning",
+    ["green lighting"]   = "green lightning",
+    ["red lighting"]     = "red lightning",
+    ["blue lighting"]    = "blue lightning",
+    ["perm chop"]        = "perm blade",
+    ["perm falcon"]      = "perm eagle",
+    ["perm revive"]      = "perm ghost",
+    ["perm barrier"]     = "perm creation",
+    ["perm door"]        = "perm portal",
+    ["perm rumble"]      = "perm lightning",
+    ["perm paw"]         = "perm pain",
+    ["perm soul"]        = "perm spirit",
+    ["perm leopard"]     = "perm tiger",
+    ["perm leo"]         = "perm tiger",
+    ["perm t-rex"]       = "perm trex",
+    ["perm t rex"]       = "perm trex",
 }
 
 local function normalizeName(name)
     name = tostring(name or ""):lower()
+    -- Strip rich-text tags if TextChatService attaches any
+    name = name:gsub("<[^>]+>", "")
+    -- Trim outer whitespace and optional <item> wrapper
     name = name:match("^%s*(.-)%s*$") or ""
     name = name:gsub("^<(.-)>$", "%1")
-    name = name:match("^%s*(.-)%s*$") or ""
-
-    -- Automatically handle "permanent " prefix to "perm "
+    -- Normalize "permanent " to "perm " and collapse multiple spaces
     name = name:gsub("^permanent%s+", "perm ")
+    name = name:gsub("%s+", " ")
+    name = name:match("^%s*(.-)%s*$") or ""
 
     return Aliases[name] or name
 end
@@ -456,6 +464,7 @@ end
 
 local function getRegistryEntry(rawInput)
     local query = normalizeName(rawInput)
+    print("[Trade Debug] rawInput:", tostring(rawInput), "| normalized query:", query)
 
     if query == "" then
         return nil, nil, "invalid"
