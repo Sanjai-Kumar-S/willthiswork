@@ -1,8 +1,8 @@
 
 -- =========================================================
--- BLOX FRUITS TRADE ADDER - VERSION 5 FINAL
--- Direct StorageKey-Based Resolver
--- Registry: User-supplied Full Registry Dump
+-- BLOX FRUITS TRADE ADDER - VERSION 5
+-- Multi-ID + StorageKey Fallback Resolver
+-- Uses Version 4 Remote and Inventory Modules
 -- =========================================================
 
 local Players = game:GetService("Players")
@@ -15,6 +15,18 @@ local TradeFunction = ReplicatedStorage
     :WaitForChild("Remotes")
     :WaitForChild("TradeFunction")
 
+local ItemReplicationService = require(
+    ReplicatedStorage:WaitForChild("ItemReplicationService")
+)
+
+local KEYS = require(
+    ReplicatedStorage.ItemReplicationService:WaitForChild("KEYS")
+)
+
+local ItemConfig = require(
+    ReplicatedStorage:WaitForChild("ItemConfig")
+)
+
 -- =========================================================
 -- 1. CONFIGURATION
 -- =========================================================
@@ -22,7 +34,11 @@ local TradeFunction = ReplicatedStorage
 local COMMAND_PREFIX = "!add "
 local DUPLICATE_COOLDOWN = 1.0
 
--- Disconnect previous listeners
+local isAdding = false
+local lastText = ""
+local lastTime = 0
+
+-- Disconnect old listeners when re-executed
 if _G.TradeAddConnections then
     for _, connection in ipairs(_G.TradeAddConnections) do
         pcall(function()
@@ -34,560 +50,491 @@ end
 _G.TradeAddConnections = {}
 
 -- =========================================================
--- 2. COMPLETE STORAGE KEY REGISTRY
+-- 2. COMPLETE ITEM REGISTRY
+-- Format: { numeric IDs in priority order, string keys }
 -- =========================================================
 
-local ItemKeys = {
+local ItemList = {
 
     -- =====================================================
     -- PHYSICAL FRUITS
     -- =====================================================
 
-    ["rocket"] = "Rocket-Rocket",
-    ["spin"] = "Spin-Spin",
-    ["blade"] = "Blade-Blade",
-    ["chop"] = "Blade-Blade",
-    ["spring"] = "Spring-Spring",
-    ["bomb"] = "Bomb-Bomb",
-    ["smoke"] = "Smoke-Smoke",
-    ["spike"] = "Spike-Spike",
+    ["rocket"]              = {1390, 4, "Rocket-Rocket"},
+    ["spin"]                = {1411, 128, "Spin-Spin"},
+    ["blade"]               = {1399, 31, "Blade-Blade"},
+    ["chop"]                = {1399, 31, "Blade-Blade"},
+    ["spring"]              = {1402, 46, "Spring-Spring"},
+    ["bomb"]                = {1397, 25, "Bomb-Bomb"},
+    ["smoke"]               = {1400, 32, "Smoke-Smoke"},
+    ["spike"]               = {1398, 26, "Spike-Spike"},
 
-    ["flame"] = "Flame-Flame",
-    ["ice"] = "Ice-Ice",
-    ["sand"] = "Sand-Sand",
-    ["dark"] = "Dark-Dark",
-    ["eagle"] = "Eagle-Eagle",
-    ["falcon"] = "Falcon-Falcon",
-    ["diamond"] = "Diamond-Diamond",
+    ["flame"]               = {1394, 18, "Flame-Flame"},
+    ["ice"]                 = {1392, 13, "Ice-Ice"},
+    ["sand"]                = {1404, 53, "Sand-Sand"},
+    ["dark"]                = {1395, 20, "Dark-Dark"},
+    ["eagle"]               = {1425, 400, "Eagle-Eagle"},
+    ["falcon"]              = {1425, 133, "Eagle-Eagle"},
+    ["diamond"]             = {1421, 208, "Diamond-Diamond"},
 
-    ["light"] = "Light-Light",
-    ["rubber"] = "Rubber-Rubber",
-    ["ghost"] = "Ghost-Ghost",
-    ["magma"] = "Magma-Magma",
+    ["light"]               = {1407, 80, "Light-Light"},
+    ["rubber"]              = {1396, 24, "Rubber-Rubber"},
+    ["ghost"]               = {1412, 158, "Ghost-Ghost"},
+    ["revive"]              = {1412, 158, "Ghost-Ghost"},
+    ["magma"]               = {1391, 8, "Magma-Magma"},
 
-    ["quake"] = "Quake-Quake",
-    ["buddha"] = "Buddha-Buddha",
-    ["love"] = "Love-Love",
-    ["love2"] = "Love2-Love2",
-    ["creation"] = "Creation-Creation",
-    ["barrier"] = "Barrier-Barrier",
-    ["spider"] = "Spider-Spider",
-    ["sound"] = "Sound-Sound",
-    ["phoenix"] = "Phoenix-Phoenix",
-    ["portal"] = "Portal-Portal",
-    ["door"] = "Door-Door",
-    ["lightning"] = "Lightning-Lightning",
-    ["rumble"] = "Rumble-Rumble",
-    ["pain"] = "Pain-Pain",
-    ["blizzard"] = "Blizzard-Blizzard",
+    ["quake"]               = {1389, 3, "Quake-Quake"},
+    ["buddha"]              = {1393, 14, "Buddha-Buddha"},
+    ["love"]                = {1408, 86, 132, "Love-Love"},
+    ["creation"]            = {1426, 402, "Creation-Creation"},
+    ["barrier"]             = {1426, 58, "Creation-Creation"},
+    ["spider"]              = {1403, 48, "Spider-Spider"},
+    ["sound"]               = {1419, 193, "Sound-Sound"},
+    ["phoenix"]             = {1401, 43, "Phoenix-Phoenix"},
+    ["portal"]              = {1414, 170, "Portal-Portal"},
+    ["door"]                = {1414, 129, "Portal-Portal"},
+    ["lightning"]           = {1427, 448, "Lightning-Lightning"},
+    ["rumble"]              = {1427, 50, "Lightning-Lightning"},
+    ["pain"]                = {1406, 57, "Pain-Pain"},
+    ["paw"]                 = {1406, 57, "Pain-Pain"},
+    ["blizzard"]            = {1416, 184, "Blizzard-Blizzard"},
 
-    ["gravity"] = "Gravity-Gravity",
-    ["mammoth"] = "Mammoth-Mammoth",
-    ["t-rex"] = "T-Rex-T-Rex",
-    ["trex"] = "T-Rex-T-Rex",
-    ["dough"] = "Dough-Dough",
-    ["shadow"] = "Shadow-Shadow",
-    ["venom"] = "Venom-Venom",
-    ["gas"] = "Gas-Gas",
-    ["spirit"] = "Spirit-Spirit",
-    ["soul"] = "Soul-Soul",
-    ["tiger"] = "Tiger-Tiger",
-    ["leopard"] = "Leopard-Leopard",
-    ["yeti"] = "Yeti-Yeti",
-    ["magnet"] = "Magnet-Magnet",
-    ["kitsune"] = "Kitsune-Kitsune",
-    ["control"] = "Control-Control",
-
-    ["dragon"] = "Dragon-Dragon",
-    ["dragon west"] = "Dragon (West)-Dragon (West)",
-    ["dragon east"] = "Dragon (East)-Dragon (East)",
-    ["dragon classic"] = "Dragon (Classic)-Dragon (Classic)",
-
-    -- Special tradable fruit entries
-    ["empyrean"] = "Empyrean (Kitsune)-Empyrean (Kitsune)",
-    ["empyrean kitsune"] = "Empyrean (Kitsune)-Empyrean (Kitsune)",
-
-    ["fiend"] = "Fiend (Yeti)-Fiend (Yeti)",
-    ["fiend yeti"] = "Fiend (Yeti)-Fiend (Yeti)",
-
-    ["werewolf"] = "Werewolf (Tiger)-Werewolf (Tiger)",
-    ["werewolf tiger"] = "Werewolf (Tiger)-Werewolf (Tiger)",
-
-    ["hellfire"] = "Hellfire (Gas)-Hellfire (Gas)",
-    ["hellfire gas"] = "Hellfire (Gas)-Hellfire (Gas)",
+    ["gravity"]             = {1405, 54, "Gravity-Gravity"},
+    ["mammoth"]              = {1418, 191, "Mammoth-Mammoth"},
+    ["trex"]                 = {1420, 204, "T-Rex-T-Rex"},
+    ["t-rex"]                = {1420, 204, "T-Rex-T-Rex"},
+    ["dough"]                = {1417, 188, "Dough-Dough"},
+    ["shadow"]               = {1413, 163, "Shadow-Shadow"},
+    ["venom"]                = {1410, 127, "Venom-Venom"},
+    ["gas"]                  = {1422, 220, "Gas-Gas"},
+    ["spirit"]               = {1415, 181, "Spirit-Spirit"},
+    ["soul"]                 = {1415, 185, "Spirit-Spirit"},
+    ["tiger"]                = {1430, 833, "Tiger-Tiger"},
+    ["leopard"]              = {1430, 64, "Tiger-Tiger"},
+    ["yeti"]                 = {1424, 229, "Yeti-Yeti"},
+    ["magnet"]               = {1515, 1516, "Magnet-Magnet"},
+    ["kitsune"]              = {1423, 221, "Kitsune-Kitsune"},
+    ["control"]              = {1409, 95, "Control-Control"},
+    ["dragon west"]          = {1435, 884, "Dragon (West)-Dragon (West)"},
+    ["west dragon"]          = {1435, 884, "Dragon (West)-Dragon (West)"},
+    ["dragon east"]          = {1436, 885, "Dragon (East)-Dragon (East)"},
+    ["east dragon"]          = {1436, 885, "Dragon (East)-Dragon (East)"},
+    ["dragon"]               = {1447, 222, 254, "Dragon-Dragon"},
 
     -- =====================================================
     -- PERMANENT FRUITS
     -- =====================================================
 
-    ["perm rocket"] = "Permanent Rocket-Rocket",
-    ["permanent rocket"] = "Permanent Rocket-Rocket",
-
-    ["perm spin"] = "Permanent Spin-Spin",
-    ["permanent spin"] = "Permanent Spin-Spin",
-
-    ["perm blade"] = "Permanent Blade-Blade",
-    ["permanent blade"] = "Permanent Blade-Blade",
-    ["perm chop"] = "Permanent Blade-Blade",
-
-    ["perm spring"] = "Permanent Spring-Spring",
-    ["permanent spring"] = "Permanent Spring-Spring",
-
-    ["perm bomb"] = "Permanent Bomb-Bomb",
-    ["permanent bomb"] = "Permanent Bomb-Bomb",
-
-    ["perm smoke"] = "Permanent Smoke-Smoke",
-    ["permanent smoke"] = "Permanent Smoke-Smoke",
-
-    ["perm spike"] = "Permanent Spike-Spike",
-    ["permanent spike"] = "Permanent Spike-Spike",
-
-    ["perm flame"] = "Permanent Flame-Flame",
-    ["permanent flame"] = "Permanent Flame-Flame",
-
-    ["perm ice"] = "Permanent Ice-Ice",
-    ["permanent ice"] = "Permanent Ice-Ice",
-
-    ["perm sand"] = "Permanent Sand-Sand",
-    ["permanent sand"] = "Permanent Sand-Sand",
-
-    ["perm dark"] = "Permanent Dark-Dark",
-    ["permanent dark"] = "Permanent Dark-Dark",
-
-    ["perm eagle"] = "Permanent Eagle-Eagle",
-    ["permanent eagle"] = "Permanent Eagle-Eagle",
-
-    ["perm falcon"] = "Permanent Falcon-Falcon",
-    ["permanent falcon"] = "Permanent Falcon-Falcon",
-
-    ["perm diamond"] = "Permanent Diamond-Diamond",
-    ["permanent diamond"] = "Permanent Diamond-Diamond",
-
-    ["perm light"] = "Permanent Light-Light",
-    ["permanent light"] = "Permanent Light-Light",
-
-    ["perm rubber"] = "Permanent Rubber-Rubber",
-    ["permanent rubber"] = "Permanent Rubber-Rubber",
-
-    ["perm ghost"] = "Permanent Ghost-Ghost",
-    ["permanent ghost"] = "Permanent Ghost-Ghost",
-
-    ["perm magma"] = "Permanent Magma-Magma",
-    ["permanent magma"] = "Permanent Magma-Magma",
-
-    ["perm quake"] = "Permanent Quake-Quake",
-    ["permanent quake"] = "Permanent Quake-Quake",
-
-    ["perm buddha"] = "Permanent Buddha-Buddha",
-    ["permanent buddha"] = "Permanent Buddha-Buddha",
-
-    ["perm love"] = "Permanent Love-Love",
-    ["permanent love"] = "Permanent Love-Love",
-
-    ["perm creation"] = "Permanent Creation-Creation",
-    ["permanent creation"] = "Permanent Creation-Creation",
-
-    ["perm barrier"] = "Permanent Barrier-Barrier",
-    ["permanent barrier"] = "Permanent Barrier-Barrier",
-
-    ["perm spider"] = "Permanent Spider-Spider",
-    ["permanent spider"] = "Permanent Spider-Spider",
-
-    ["perm sound"] = "Permanent Sound-Sound",
-    ["permanent sound"] = "Permanent Sound-Sound",
-
-    ["perm phoenix"] = "Permanent Phoenix-Phoenix",
-    ["permanent phoenix"] = "Permanent Phoenix-Phoenix",
-
-    ["perm portal"] = "Permanent Portal-Portal",
-    ["permanent portal"] = "Permanent Portal-Portal",
-
-    ["perm lightning"] = "Permanent Lightning-Lightning",
-    ["permanent lightning"] = "Permanent Lightning-Lightning",
-
-    ["perm rumble"] = "Permanent Rumble-Rumble",
-    ["permanent rumble"] = "Permanent Rumble-Rumble",
-
-    ["perm pain"] = "Permanent Pain-Pain",
-    ["permanent pain"] = "Permanent Pain-Pain",
-
-    ["perm blizzard"] = "Permanent Blizzard-Blizzard",
-    ["permanent blizzard"] = "Permanent Blizzard-Blizzard",
-
-    ["perm gravity"] = "Permanent Gravity-Gravity",
-    ["permanent gravity"] = "Permanent Gravity-Gravity",
-
-    ["perm mammoth"] = "Permanent Mammoth-Mammoth",
-    ["permanent mammoth"] = "Permanent Mammoth-Mammoth",
-
-    ["perm t-rex"] = "Permanent T-Rex-T-Rex",
-    ["perm trex"] = "Permanent T-Rex-T-Rex",
-    ["permanent t-rex"] = "Permanent T-Rex-T-Rex",
-
-    ["perm dough"] = "Permanent Dough-Dough",
-    ["permanent dough"] = "Permanent Dough-Dough",
-
-    ["perm shadow"] = "Permanent Shadow-Shadow",
-    ["permanent shadow"] = "Permanent Shadow-Shadow",
-
-    ["perm venom"] = "Permanent Venom-Venom",
-    ["permanent venom"] = "Permanent Venom-Venom",
-
-    ["perm gas"] = "Permanent Gas-Gas",
-    ["permanent gas"] = "Permanent Gas-Gas",
-
-    ["perm spirit"] = "Permanent Spirit-Spirit",
-    ["permanent spirit"] = "Permanent Spirit-Spirit",
-
-    ["perm soul"] = "Permanent Soul-Soul",
-    ["permanent soul"] = "Permanent Soul-Soul",
-
-    ["perm tiger"] = "Permanent Tiger-Tiger",
-    ["permanent tiger"] = "Permanent Tiger-Tiger",
-
-    ["perm leopard"] = "Permanent Leopard-Leopard",
-    ["permanent leopard"] = "Permanent Leopard-Leopard",
-
-    ["perm yeti"] = "Permanent Yeti-Yeti",
-    ["permanent yeti"] = "Permanent Yeti-Yeti",
-
-    ["perm magnet"] = "Permanent Magnet-Magnet",
-    ["permanent magnet"] = "Permanent Magnet-Magnet",
-
-    ["perm kitsune"] = "Permanent Kitsune-Kitsune",
-    ["permanent kitsune"] = "Permanent Kitsune-Kitsune",
-
-    ["perm control"] = "Permanent Control-Control",
-    ["permanent control"] = "Permanent Control-Control",
-
-    ["perm dragon"] = "Permanent Dragon-Dragon",
-    ["permanent dragon"] = "Permanent Dragon-Dragon",
-
-    ["perm dragon west"] = "Permanent Dragon (West)-Dragon (West)",
-    ["permanent dragon west"] = "Permanent Dragon (West)-Dragon (West)",
-
-    ["perm dragon east"] = "Permanent Dragon (East)-Dragon (East)",
-    ["permanent dragon east"] = "Permanent Dragon (East)-Dragon (East)",
-
-    ["perm dragon classic"] = "Permanent Dragon (Classic)-Dragon (Classic)",
-    ["permanent dragon classic"] = "Permanent Dragon (Classic)-Dragon (Classic)",
-
-    ["perm dragon token"] = "Permanent Dragon Token",
-
-    ["discounted perm dragon"] = "Discounted Permanent Dragon",
+    ["perm rocket"]          = {357, "Permanent Rocket-Rocket"},
+    ["perm spin"]            = {360, "Permanent Spin-Spin"},
+    ["perm blade"]           = {350, "Permanent Blade-Blade"},
+    ["perm spring"]          = {381, "Permanent Spring-Spring"},
+    ["perm bomb"]            = {344, "Permanent Bomb-Bomb"},
+    ["perm smoke"]           = {379, "Permanent Smoke-Smoke"},
+    ["perm spike"]           = {378, "Permanent Spike-Spike"},
+    ["perm flame"]           = {347, "Permanent Flame-Flame"},
+    ["perm ice"]             = {359, "Permanent Ice-Ice"},
+    ["perm sand"]            = {353, "Permanent Sand-Sand"},
+    ["perm dark"]            = {371, "Permanent Dark-Dark"},
+    ["perm eagle"]           = {401, "Permanent Eagle-Eagle"},
+    ["perm diamond"]         = {351, "Permanent Diamond-Diamond"},
+    ["perm light"]           = {345, "Permanent Light-Light"},
+    ["perm rubber"]          = {369, "Permanent Rubber-Rubber"},
+    ["perm ghost"]           = {341, "Permanent Ghost-Ghost"},
+    ["perm magma"]           = {349, "Permanent Magma-Magma"},
+    ["perm quake"]           = {366, "Permanent Quake-Quake"},
+    ["perm buddha"]          = {372, "Permanent Buddha-Buddha"},
+    ["perm love"]            = {342, "Permanent Love-Love"},
+    ["perm creation"]        = {403, "Permanent Creation-Creation"},
+    ["perm spider"]          = {380, "Permanent Spider-Spider"},
+    ["perm sound"]           = {346, "Permanent Sound-Sound"},
+    ["perm phoenix"]         = {370, "Permanent Phoenix-Phoenix"},
+    ["perm portal"]          = {368, "Permanent Portal-Portal"},
+    ["perm lightning"]       = {449, "Permanent Lightning-Lightning"},
+    ["perm pain"]            = {361, "Permanent Pain-Pain"},
+    ["perm blizzard"]        = {352, "Permanent Blizzard-Blizzard"},
+    ["perm gravity"]         = {365, "Permanent Gravity-Gravity"},
+    ["perm mammoth"]         = {354, "Permanent Mammoth-Mammoth"},
+    ["perm trex"]            = {375, "Permanent T-Rex-T-Rex"},
+    ["perm dough"]           = {373, "Permanent Dough-Dough"},
+    ["perm shadow"]          = {367, "Permanent Shadow-Shadow"},
+    ["perm venom"]           = {348, "Permanent Venom-Venom"},
+    ["perm gas"]             = {363, "Permanent Gas-Gas"},
+    ["perm spirit"]          = {383, "Permanent Spirit-Spirit"},
+    ["perm tiger"]           = {834, "Permanent Tiger-Tiger"},
+    ["perm yeti"]             = {343, "Permanent Yeti-Yeti"},
+    ["perm magnet"]          = {1517, "Permanent Magnet-Magnet"},
+    ["perm kitsune"]         = {374, "Permanent Kitsune-Kitsune"},
+    ["perm control"]         = {358, "Permanent Control-Control"},
+    ["perm dragon"]          = {399, 355, 356, "Permanent Dragon-Dragon"},
+    ["perm dragon token"]    = {844, "Permanent Dragon Token"},
 
     -- =====================================================
-    -- DRAGON LIMITED SKINS
+    -- GAMEPASSES & ITEMS
     -- =====================================================
 
-    -- Ember
-    ["ember west"] = "WSTDSKINember",
-    ["ember dragon west"] = "WSTDSKINember",
-    ["ember east"] = "ESTDSKINember",
-    ["ember dragon east"] = "ESTDSKINember",
-    ["ember chromatic"] = "EmberChromaticDragon",
-    ["ember dragon chromatic"] = "EmberChromaticDragon",
-
-    -- Eclipse
-    ["eclipse west"] = "WSTDSKINeclipse",
-    ["eclipse dragon west"] = "WSTDSKINeclipse",
-    ["eclipse east"] = "ESTDSKINeclipse",
-    ["eclipse dragon east"] = "ESTDSKINeclipse",
-    ["eclipse chromatic"] = "EclipseChromaticDragon",
-    ["eclipse dragon chromatic"] = "EclipseChromaticDragon",
-
-    -- Blood Moon
-    ["blood moon west"] = "WSTDSKINbloodmoon",
-    ["blood moon dragon west"] = "WSTDSKINbloodmoon",
-    ["blood moon east"] = "ESTDSKINbloodmoon",
-    ["blood moon dragon east"] = "ESTDSKINbloodmoon",
-    ["blood moon chromatic"] = "BloodmoonChromaticDragon",
-
-    -- Phoenix Sky
-    ["phoenix sky west"] = "WSTDSKINphoenixsky",
-    ["phoenix sky dragon west"] = "WSTDSKINphoenixsky",
-    ["phoenix sky east"] = "ESTDSKINphoenixsky",
-    ["phoenix sky dragon east"] = "ESTDSKINphoenixsky",
-    ["phoenix sky chromatic"] = "PhoenixSkyChromaticDragon",
-
-    -- Violet Night
-    ["violet night west"] = "WSTDSKINvioletnight",
-    ["violet night dragon west"] = "WSTDSKINvioletnight",
-    ["violet night east"] = "ESTDSKINvioletnight",
-    ["violet night dragon east"] = "ESTDSKINvioletnight",
-    ["violet night chromatic"] = "VioletNightChromaticDragon",
+    ["fruit notifier"]       = {233, "Fruit Notifier"},
+    ["dark blade"]           = {190, 255, 1250, "Dark Blade"},
+    ["2x mastery"]           = {234, "2x Mastery"},
+    ["2x money"]             = {242, "2x Money"},
+    ["2x boss drops"]        = {244, "2x Boss Drops"},
+    ["fast boats"]           = {245, "Fast Boats"},
+    ["fruit storage"]        = {235, "+1 Fruit Storage"},
+    ["dragon token"]         = {240, 844, "Dragon Token (Tradable)"},
 
     -- =====================================================
-    -- KITSUNE LIMITED SKINS
+    -- LIMITED SKINS & MUTATIONS
     -- =====================================================
 
-    ["crimson"] = "KYUKONSKINcrimson",
-    ["crimson kitsune"] = "KYUKONSKINcrimson",
-    ["kitsune crimson"] = "KYUKONSKINcrimson",
-
-    ["galaxy"] = "KYUKONSKINgalaxy",
-    ["galaxy kitsune skin"] = "KYUKONSKINgalaxy",
-    ["kitsune galaxy"] = "KYUKONSKINgalaxy",
-
-    -- =====================================================
-    -- PAIN LIMITED SKINS
-    -- =====================================================
-
-    ["celestial pain skin"] = "PAINSKINcelestial",
-    ["pain celestial"] = "PAINSKINcelestial",
-
-    ["super spirit pain skin"] = "PAINSKINsuperspirit",
-    ["pain super spirit"] = "PAINSKINsuperspirit",
-
-    -- =====================================================
-    -- LIGHTNING LIMITED SKINS
-    -- =====================================================
-
-    ["purple lightning"] = "LIGHTNINGSKINpurple",
-    ["yellow lightning"] = "LIGHTNINGSKINyellow",
-    ["green lightning"] = "LIGHTNINGSKINgreen",
-    ["red lightning"] = "LIGHTNINGSKINred",
-    ["blue lightning"] = "LIGHTNINGSKINblue",
-
-    -- =====================================================
-    -- PORTAL LIMITED SKINS
-    -- =====================================================
-
-    ["divine portal"] = "PORTALSKINdivine",
-    ["portal divine"] = "PORTALSKINdivine",
-
-    ["pink portal"] = "PORTALSKINpink",
-    ["portal pink"] = "PORTALSKINpink",
-
-    ["orange portal"] = "PORTALSKINorange",
-    ["portal orange"] = "PORTALSKINorange",
-
-    ["blue portal"] = "PORTALSKINblue",
-    ["portal blue"] = "PORTALSKINblue",
+    ["ember"]                = {305, 298, 264, "EmberChromaticDragon", "WSTDSKINember", "ESTDSKINember"},
+    ["eclipse"]              = {303, 271, 281, "EclipseChromaticDragon", "WSTDSKINeclipse", "ESTDSKINeclipse"},
+    ["blood moon"]           = {306, 286, 273, "BloodmoonChromaticDragon", "WSTDSKINbloodmoon", "ESTDSKINbloodmoon"},
+    ["phoenix sky"]          = {302, 268, 274, "PhoenixSkyChromaticDragon", "WSTDSKINphoenixsky", "ESTDSKINphoenixsky"},
+    ["violet night"]         = {304, 258, 299, "VioletNightChromaticDragon", "WSTDSKINvioletnight", "ESTDSKINvioletnight"},
+    ["crimson"]              = {1045, "KYUKONSKINcrimson"},
+    ["galaxy"]               = {1046, 1042, "KYUKONSKINgalaxy"},
+    ["empyrean kitsune"]     = {1433, 1041, "Empyrean (Kitsune)-Empyrean (Kitsune)"},
+    ["sadness"]              = {479, "Sadness Pain"},
+    ["torment"]              = {491, "Torment Pain"},
+    ["frustration"]          = {492, "Frustration Pain"},
+    ["celestial"]            = {500, 498, "PAINSKINcelestial"},
+    ["super spirit"]         = {538, 541, "PAINSKINsuperspirit"},
+    ["divine"]               = {1049, 1048, "PORTALSKINdivine"},
+    ["emerald"]              = {456, 471, "DIAMONDSKINgreen"},
+    ["rose quartz"]          = {472, 470, "DIAMONDSKINpoudretteite"},
+    ["topaz"]                = {473, 469, "DIAMONDSKINtopaz"},
+    ["ruby"]                 = {455, 468, "DIAMONDSKINred"},
+    ["glacier"]              = {499, 496, "FALCSKINglacier"},
+    ["requiem"]              = {501, 495, "FALCSKINrequiem"},
+    ["matrix"]               = {497, 502, "FALCSKINmatrix"},
+    ["parrot"]               = {404, "FALCSKINparrot"},
+    ["nuclear"]               = {506, 508, "BOMBSKINnuclear"},
+    ["thermite"]             = {528, 511, "BOMBSKINthermite"},
+    ["azura"]                = {529, 512, "BOMBSKINazura"},
+    ["celebration"]          = {536, 539, "BOMBSKINcelebration"},
+    ["arcsteel"]             = {1538, 1525, "MAGNETSKINarksteel"},
+    ["runic"]                = {1532, 1522, "FIENDSKINsealed"},
+    ["fiend"]                = {1063, 1434, "YETISKINfiend", "Fiend (Yeti)-Fiend (Yeti)"},
+    ["starlight"]            = {1534, 1523, "GRAVITYSKINheavenly"},
+    ["lime"]                 = {1540, 1526, "BLADESKINlime"},
+    ["werewolf"]             = {818, 1432, "TIGERSKINwerewolf", "Werewolf (Tiger)-Werewolf (Tiger)"},
+    ["hellfire"]             = {1604, 1601, "HELLFIRESKINdefault", "Hellfire (Gas)-Hellfire (Gas)"},
 
     -- =====================================================
-    -- DIAMOND LIMITED SKINS
+    -- LIMITED BANNERS & SWORD SKINS
     -- =====================================================
 
-    ["emerald diamond skin"] = "DIAMONDSKINgreen",
-    ["diamond emerald"] = "DIAMONDSKINgreen",
-
-    ["rose quartz"] = "DIAMONDSKINpoudretteite",
-    ["rose quartz diamond"] = "DIAMONDSKINpoudretteite",
-
-    ["topaz diamond skin"] = "DIAMONDSKINtopaz",
-    ["diamond topaz"] = "DIAMONDSKINtopaz",
-
-    ["ruby diamond skin"] = "DIAMONDSKINred",
-    ["diamond ruby"] = "DIAMONDSKINred",
-
-    -- =====================================================
-    -- EAGLE LIMITED SKINS
-    -- =====================================================
-
-    ["glacier eagle"] = "FALCSKINglacier",
-    ["eagle glacier"] = "FALCSKINglacier",
-
-    ["requiem eagle"] = "FALCSKINrequiem",
-    ["eagle requiem"] = "FALCSKINrequiem",
-
-    ["matrix eagle"] = "FALCSKINmatrix",
-    ["eagle matrix"] = "FALCSKINmatrix",
-
-    ["parrot eagle"] = "FALCSKINparrot",
-    ["eagle parrot"] = "FALCSKINparrot",
-
-    -- =====================================================
-    -- BOMB LIMITED SKINS
-    -- =====================================================
-
-    ["nuclear bomb"] = "BOMBSKINnuclear",
-    ["bomb nuclear"] = "BOMBSKINnuclear",
-
-    ["thermite bomb"] = "BOMBSKINthermite",
-    ["bomb thermite"] = "BOMBSKINthermite",
-
-    ["azura bomb"] = "BOMBSKINazura",
-    ["bomb azura"] = "BOMBSKINazura",
-
-    ["celebration bomb"] = "BOMBSKINcelebration",
-    ["bomb celebration"] = "BOMBSKINcelebration",
-
-    -- =====================================================
-    -- MAGNET LIMITED SKIN
-    -- =====================================================
-
-    ["arcsteel"] = "MAGNETSKINarksteel",
-    ["arcsteel magnet"] = "MAGNETSKINarksteel",
-    ["magnet arcsteel"] = "MAGNETSKINarksteel",
-
-    -- =====================================================
-    -- YETI / FIEND LIMITED SKINS
-    -- =====================================================
-
-    ["runic"] = "FIENDSKINsealed",
-    ["runic fiend"] = "FIENDSKINsealed",
-    ["sealed fiend skin"] = "FIENDSKINsealed",
-
-    ["fiend skin"] = "YETISKINfiend",
-    ["yeti fiend skin"] = "YETISKINfiend",
-
-    ["fiend mutation"] = "YETIMUTFiend",
-    ["yeti fiend mutation"] = "YETIMUTFiend",
-
-    -- =====================================================
-    -- GRAVITY LIMITED SKIN
-    -- =====================================================
-
-    ["starlight"] = "GRAVITYSKINheavenly",
-    ["starlight gravity"] = "GRAVITYSKINheavenly",
-    ["heavenly gravity"] = "GRAVITYSKINheavenly",
-
-    -- =====================================================
-    -- TIGER LIMITED SKINS
-    -- =====================================================
-
-    ["werewolf skin"] = "TIGERSKINwerewolf",
-    ["tiger werewolf skin"] = "TIGERSKINwerewolf",
-
-    ["werewolf mutation"] = "TIGERMUTWerewolf",
-    ["tiger werewolf mutation"] = "TIGERMUTWerewolf",
-
-    -- =====================================================
-    -- GAS LIMITED SKINS
-    -- =====================================================
-
-    ["hellfire skin"] = "HELLFIRESKINdefault",
-    ["gas hellfire skin"] = "HELLFIRESKINdefault",
-
-    ["hellfire mutation"] = "GASMUTHellfire",
-    ["gas hellfire mutation"] = "GASMUTHellfire",
-
-    -- =====================================================
-    -- DOG BLADE TRADABLE SKIN
-    -- =====================================================
-
-    ["rabid"] = "BRATSKINslayer",
-    ["rabid dog blade"] = "BRATSKINslayer",
-    ["dog blade rabid"] = "BRATSKINslayer",
-
-    -- =====================================================
-    -- GAMEPASSES
-    -- =====================================================
-
-    ["fruit notifier"] = "Fruit Notifier",
-    ["notifier"] = "Fruit Notifier",
-
-    ["dark blade"] = "Dark Blade",
-    ["yama gamepass"] = "Dark Blade",
-
-    ["2x mastery"] = "2x Mastery",
-    ["double mastery"] = "2x Mastery",
-
-    ["2x money"] = "2x Money",
-    ["double money"] = "2x Money",
-
-    ["2x boss drops"] = "2x Boss Drops",
-    ["double boss drops"] = "2x Boss Drops",
-
-    ["fast boats"] = "Fast Boats",
-
-    ["storage"] = "+1 Fruit Storage",
-    ["+1 storage"] = "+1 Fruit Storage",
-    ["fruit storage"] = "+1 Fruit Storage",
-    ["+1 fruit storage"] = "+1 Fruit Storage",
-
-    -- =====================================================
-    -- SPECIAL TRADABLE TOKENS
-    -- =====================================================
-
-    ["dragon token"] = "Dragon Token (Tradable)",
-    ["tradable dragon token"] = "Dragon Token (Tradable)",
-
+    ["dog blade"]            = {1482, 1483, "The Sword Of The Brat"},
+    ["sword of the brat"]    = {1482, "The Sword Of The Brat"},
+    ["rabid skin"]           = {1487, 1484, "BRATSKINslayer"},
+    ["dog house"]            = {1485, "DogHouseGacha26"},
+    ["vibe"]                 = {1479, "Heartbreak"},
 }
 
 -- =========================================================
--- 3. NORMALIZE INPUT
+-- 3. ITEM ALIASES
 -- =========================================================
 
-local function normalizeInput(name)
+local Aliases = {
+    ["leo"] = "leopard",
+    ["t rex"] = "trex",
+    ["lighting"] = "lightning",
+    ["perm chop"] = "perm blade",
+    ["perm falcon"] = "perm eagle",
+    ["perm revive"] = "perm ghost",
+    ["perm barrier"] = "perm creation",
+    ["perm door"] = "perm portal",
+    ["perm rumble"] = "perm lightning",
+    ["perm paw"] = "perm pain",
+    ["perm soul"] = "perm spirit",
+    ["perm leopard"] = "perm tiger",
+    ["perm falcon"] = "perm eagle",
+}
 
-    if type(name) ~= "string" then
-        return nil
-    end
-
-    name = name:lower()
-    name = name:match("^%s*(.-)%s*$")
-
+local function normalizeName(name)
+    name = tostring(name or ""):lower()
+    name = name:match("^%s*(.-)%s*$") or ""
     name = name:gsub("^<(.-)>$", "%1")
-    name = name:match("^%s*(.-)%s*$")
+    name = name:match("^%s*(.-)%s*$") or ""
 
-    name = name:gsub("%s+", " ")
-
-    if name == "" then
-        return nil
-    end
-
-    return name
+    return Aliases[name] or name
 end
 
 -- =========================================================
--- 4. RESOLVE STORAGE KEY
+-- 4. GET OWNED INVENTORY
 -- =========================================================
 
-local function findStorageKey(rawInput)
+local function getItemMetadata(itemId)
+    local ok, cfg = pcall(function()
+        return ItemConfig.tryGet(itemId)
+    end)
 
-    local query = normalizeInput(rawInput)
-
-    if not query then
-        return nil, "invalid"
+    if not ok or type(cfg) ~= "table" then
+        return "", ""
     end
 
-    -- Exact alias lookup
-    local storageKey = ItemKeys[query]
+    local display = ""
+    local storage = ""
 
-    if storageKey then
-        return storageKey, "exact"
+    if cfg.Display and cfg.Display.Name then
+        display = tostring(cfg.Display.Name):lower()
     end
 
-    -- Unique partial alias matching
-    local matches = {}
+    if cfg.Index and cfg.Index.StorageKey then
+        storage = tostring(cfg.Index.StorageKey):lower()
+    end
 
-    for alias, key in pairs(ItemKeys) do
+    return display, storage
+end
 
-        if alias:find(query, 1, true) then
-            matches[key] = true
+local function buildOwnedInventory()
+    local ownedIds = {}
+    local ownedStorageKeys = {}
+
+    local buckets = {
+        KEYS.IS_OWNED,
+        KEYS.COUNT
+    }
+
+    for _, keyType in ipairs(buckets) do
+        if keyType ~= nil then
+            local ok, items = pcall(function()
+                return ItemReplicationService:GetItems(keyType)
+            end)
+
+            if ok and type(items) == "table" then
+                for _, item in pairs(items) do
+                    if type(item) == "table" and item.ItemId then
+                        local hasValue =
+                            item.Value == true
+                            or (
+                                type(item.Value) == "number"
+                                and item.Value > 0
+                            )
+                            or (
+                                type(item.Count) == "number"
+                                and item.Count > 0
+                            )
+
+                        if hasValue then
+                            local itemId = item.ItemId
+                            ownedIds[itemId] = true
+
+                            local _, storage = getItemMetadata(itemId)
+
+                            if storage ~= "" then
+                                ownedStorageKeys[storage] = true
+                            end
+                        end
+                    end
+                end
+            end
         end
-
     end
 
-    local count = 0
-    local result
-
-    for key in pairs(matches) do
-        count += 1
-        result = key
-    end
-
-    if count == 1 then
-        return result, "partial"
-
-    elseif count > 1 then
-        return nil, "ambiguous"
-    end
-
-    return nil, "not_found"
+    return ownedIds, ownedStorageKeys
 end
 
 -- =========================================================
--- 5. CHAT COMMAND HANDLER
+-- 5. RESOLVE REGISTRY ENTRY
 -- =========================================================
 
-local lastText = ""
-local lastTime = 0
+local function getRegistryEntry(rawInput)
+    local query = normalizeName(rawInput)
+
+    if query == "" then
+        return nil, nil, "invalid"
+    end
+
+    -- Support: !add phy rocket
+    -- Support: !add base rocket
+    local physicalName = query:match("^phy%s+(.+)$")
+        or query:match("^base%s+(.+)$")
+
+    if physicalName then
+        query = normalizeName(physicalName)
+    end
+
+    local entry = ItemList[query]
+
+    if not entry then
+        return nil, nil, "not_found"
+    end
+
+    return entry, query, "found"
+end
+
+-- =========================================================
+-- 6. TRY ADDING ITEM
+-- =========================================================
+
+local function tryAddIdentifier(identifier)
+    local callOk, result = pcall(function()
+        return TradeFunction:InvokeServer(
+            "addItem",
+            identifier,
+            1
+        )
+    end)
+
+    if not callOk then
+        warn(
+            "[Trade] Remote call error. Stopping to avoid duplicate:",
+            result
+        )
+
+        return "error"
+    end
+
+    -- An explicit false means the server rejected this identifier.
+    if result == false then
+        return "rejected"
+    end
+
+    -- This assumes the remote uses false for rejection and any other
+    -- return value (including nil) for an accepted request.
+    return "success"
+end
+
+local function addItem(rawInput)
+    if isAdding then
+        warn("[Trade] Another add request is already running.")
+        return
+    end
+
+    local entry, itemName, status = getRegistryEntry(rawInput)
+
+    if not entry then
+        warn("[Trade] Item not found in registry:", rawInput)
+        return
+    end
+
+    isAdding = true
+
+    local ownedIds, ownedStorageKeys = buildOwnedInventory()
+
+    local numericCandidates = {}
+    local stringCandidates = {}
+
+    -- Keep the registry's original order.
+    for _, value in ipairs(entry) do
+        if type(value) == "number" then
+            table.insert(numericCandidates, value)
+        elseif type(value) == "string" then
+            table.insert(stringCandidates, value)
+        end
+    end
+
+    local attempted = {}
+    local added = false
+    local uncertain = false
+
+    -- -----------------------------------------------------
+    -- A. Try owned numeric IDs, in registry order
+    -- -----------------------------------------------------
+
+    for _, itemId in ipairs(numericCandidates) do
+        if ownedIds[itemId] and not attempted[itemId] then
+            attempted[itemId] = true
+
+            print("[Trade] Trying numeric ID:", itemId, itemName)
+
+            local result = tryAddIdentifier(itemId)
+
+            if result == "success" then
+                print(
+                    "[Trade] Successfully added:",
+                    itemName,
+                    "| Identifier:",
+                    itemId
+                )
+
+                added = true
+                break
+
+            elseif result == "error" then
+                uncertain = true
+                break
+            end
+
+            print("[Trade] ID rejected; trying next candidate:", itemId)
+        end
+    end
+
+    -- -----------------------------------------------------
+    -- B. If numeric IDs failed, try owned string keys
+    -- -----------------------------------------------------
+
+    if not added and not uncertain then
+        for _, storageKey in ipairs(stringCandidates) do
+            local normalizedKey = storageKey:lower()
+
+            if ownedStorageKeys[normalizedKey]
+                and not attempted[storageKey] then
+
+                attempted[storageKey] = true
+
+                print(
+                    "[Trade] Trying StorageKey:",
+                    storageKey,
+                    itemName
+                )
+
+                local result = tryAddIdentifier(storageKey)
+
+                if result == "success" then
+                    print(
+                        "[Trade] Successfully added:",
+                        itemName,
+                        "| StorageKey:",
+                        storageKey
+                    )
+
+                    added = true
+                    break
+
+                elseif result == "error" then
+                    uncertain = true
+                    break
+                end
+
+                print(
+                    "[Trade] StorageKey rejected:",
+                    storageKey
+                )
+            end
+        end
+    end
+
+    -- -----------------------------------------------------
+    -- C. Final result
+    -- -----------------------------------------------------
+
+    if added then
+        print("[Trade] Finished:", itemName)
+
+    elseif uncertain then
+        warn(
+            "[Trade] Result uncertain for:",
+            itemName,
+            "| Stopped to prevent a possible duplicate."
+        )
+
+    else
+        warn(
+            "[Trade] No matching owned ID or StorageKey found:",
+            itemName
+        )
+    end
+
+    isAdding = false
+end
+
+-- =========================================================
+-- 7. CHAT COMMAND HANDLER
+-- =========================================================
 
 local function handleChatCommand(rawText)
-
     if type(rawText) ~= "string" then
         return
     end
@@ -595,12 +542,11 @@ local function handleChatCommand(rawText)
     local cleanText = rawText:match("^%s*(.-)%s*$")
     local lowerText = cleanText:lower()
 
-    if lowerText:sub(1, #COMMAND_PREFIX)
-        ~= COMMAND_PREFIX then
+    if lowerText:sub(1, #COMMAND_PREFIX) ~= COMMAND_PREFIX then
         return
     end
 
-    -- Duplicate command protection
+    -- Duplicate message protection
     local now = os.clock()
 
     if lowerText == lastText
@@ -611,126 +557,55 @@ local function handleChatCommand(rawText)
     lastText = lowerText
     lastTime = now
 
-    local targetInput =
-        cleanText:sub(#COMMAND_PREFIX + 1)
+    local targetInput = cleanText:sub(#COMMAND_PREFIX + 1)
+    targetInput = targetInput:match("^%s*(.-)%s*$")
 
-    local storageKey, matchType =
-        findStorageKey(targetInput)
-
-    if not storageKey then
-
-        if matchType == "ambiguous" then
-
-            warn(
-                "[Trade] Multiple matching items:",
-                targetInput,
-                "| Use a more specific name."
-            )
-
-        elseif matchType == "invalid" then
-
-            warn("[Trade] Invalid item name.")
-
-        else
-
-            warn(
-                "[Trade] Item not found:",
-                targetInput
-            )
-
-        end
-
+    if targetInput == "" then
+        warn("[Trade] Usage: !add <item name>")
         return
     end
 
-    -- =====================================================
-    -- DIRECT STORAGE KEY TRADE REQUEST
-    -- =====================================================
-
-    local ok, result = pcall(function()
-
-        return TradeFunction:InvokeServer(
-            "addItem",
-            storageKey,
-            1
-        )
-
-    end)
-
-    if ok then
-
-        print(
-            "[Trade] Add request sent:",
-            targetInput,
-            "| StorageKey:",
-            storageKey,
-            "| Match:",
-            matchType
-        )
-
-    else
-
-        warn(
-            "[Trade] InvokeServer failed:",
-            result
-        )
-
-    end
-
+    addItem(targetInput)
 end
 
 -- =========================================================
--- 6. CHAT LISTENER
+-- 8. CHAT LISTENERS
 -- =========================================================
 
 if TextChatService
-    and TextChatService.ChatVersion
-        == Enum.ChatVersion.TextChatService then
+    and TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
 
     table.insert(
         _G.TradeAddConnections,
 
-        TextChatService.MessageReceived:Connect(function(msg)
+        TextChatService.MessageReceived:Connect(function(message)
+            if message.TextSource
+                and message.TextSource.UserId == LocalPlayer.UserId then
 
-            if msg.TextSource
-                and msg.TextSource.UserId == LocalPlayer.UserId then
-
-                handleChatCommand(msg.Text)
-
+                handleChatCommand(message.Text)
             end
-
         end)
     )
 
 else
-
     table.insert(
         _G.TradeAddConnections,
         LocalPlayer.Chatted:Connect(handleChatCommand)
     )
-
 end
 
 -- =========================================================
--- 7. READY
+-- 9. READY
 -- =========================================================
-
-local totalAliases = 0
-
-for _ in pairs(ItemKeys) do
-    totalAliases += 1
-end
 
 print("========================================")
-print("[Trade] VERSION 5 FINAL LOADED!")
-print("[Trade] Direct StorageKey resolver active.")
-print("[Trade] Registry aliases:", totalAliases)
-print("[Trade] Physical fruits enabled.")
-print("[Trade] Permanent fruits enabled.")
-print("[Trade] Limited skins enabled.")
-print("[Trade] Special items enabled.")
-print("[Trade] Tradable gamepasses enabled.")
-print("[Trade] Exact key lookup enabled.")
-print("[Trade] Unique partial matching enabled.")
-print("[Trade] Commands: !add <item>")
+print("[Trade] Version 5 loaded!")
+print("[Trade] Multi-ID resolver active.")
+print("[Trade] StorageKey fallback active.")
+print("[Trade] Physical / Permanent / Gamepasses")
+print("[Trade] Limited skins / Mutations / Items")
+print("[Trade] Command: !add <item>")
+print("[Trade] Example: !add dragon")
+print("[Trade] Example: !add perm dragon")
+print("[Trade] Example: !add phy rocket")
 print("========================================")
