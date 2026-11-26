@@ -57,18 +57,13 @@ local isResetting = false
 local lastText = ""
 local lastTime = 0
 
--- Disconnect old listeners and stop old auto-sit loop when re-executed
+-- Disconnect old listeners when re-executed
 if _G.TradeAddConnections then
 	for _, connection in ipairs(_G.TradeAddConnections) do
 		pcall(function()
 			connection:Disconnect()
 		end)
 	end
-end
-
-if _G.TradeSitThread then
-	pcall(task.cancel, _G.TradeSitThread)
-	_G.TradeSitThread = nil
 end
 
 _G.TradeAddConnections = {}
@@ -698,7 +693,7 @@ local function tryRemoveIdentifier(identifier)
 		return "error"
 	end
 
-	if result == false then
+	if result == false or result == nil then
 		return "rejected"
 	end
 
@@ -774,24 +769,19 @@ local function InvokeTradeAction(action)
 
 	print("[DEBUG] Processing action via verified remote layout:", action)
 
-	local ok, res = pcall(function()
+	pcall(function()
 		if action == "accept" or action == "!accept" then
-			return TradeFunction:InvokeServer("accept")
+			local args = { "accept" }
+			TradeFunction:InvokeServer(unpack(args))
+			print("[TRADE] !accept command executed")
 		elseif action == "cancel" or action == "!cancel" then
-			return TradeFunction:InvokeServer("cancel")
+			local args = { "cancel" }
+			TradeFunction:InvokeServer(unpack(args))
+			print("[TRADE] !cancel command executed")
+		else
+			warn("[TRADE] Unknown command:", action)
 		end
-		return "unknown"
 	end)
-
-	if res == "unknown" then
-		warn("[TRADE] Unknown command:", action)
-	elseif not ok then
-		warn("[TRADE] Remote error on", action, ":", res)
-	elseif res == false then
-		warn("[TRADE] Server rejected", action)
-	else
-		print("[TRADE]", action, "command executed")
-	end
 end
 
 -- =========================================================
@@ -988,41 +978,27 @@ local function clickResetButton(button)
 		return false
 	end
 
-	if isResetGuiVisible(button) then
-		local inset = GuiService:GetGuiInset()
-		local pos = button.AbsolutePosition
-		local size = button.AbsoluteSize
-		local x = pos.X + (size.X * 0.5)
-		local y = pos.Y + (size.Y * 0.5) + inset.Y
-
-		local vimOk = pcall(function()
-			VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
-			task.wait(0.05)
-			VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
-		end)
-
-		if vimOk then
-			return true
-		end
-	end
-
-	if button:IsA("GuiButton") then
-		local ok = pcall(function()
-			button:Activate()
-		end)
-		if ok then
-			return true
-		end
-	end
-
 	if typeof(firesignal) == "function" then
-		pcall(function()
-			firesignal(button.MouseButton1Click)
-		end)
-		return true
+		pcall(function() firesignal(button.MouseButton1Click) end)
+		pcall(function() firesignal(button.Activated) end)
+	end
+	if button:IsA("GuiButton") then
+		pcall(function() button:Activate() end)
 	end
 
-	return false
+	local inset = GuiService:GetGuiInset()
+	local pos = button.AbsolutePosition
+	local size = button.AbsoluteSize
+	local x = pos.X + (size.X * 0.5)
+	local y = pos.Y + (size.Y * 0.5) + inset.Y
+
+	pcall(function()
+		VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+		task.wait(0.05)
+		VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
+	end)
+
+	return true
 end
 
 local function findResetTextBox(parent)
@@ -1046,14 +1022,19 @@ local function openResetTreasure()
 	local main = invInner and invInner:FindFirstChild("Main")
 
 	if not isResetGuiVisible(main) then
-		local hudRoot = PlayerGui:FindFirstChild("HUDRoot")
-		if hudRoot then
-			local m = hudRoot:FindFirstChild("Menu", true)
-			local it = hudRoot:FindFirstChild("Items", true)
+		local menuBtn = PlayerGui:FindFirstChild("HUDRoot")
+			and PlayerGui.HUDRoot:FindFirstChild("Menu", true)
+		local itemsBtn = PlayerGui:FindFirstChild("HUDRoot")
+			and PlayerGui.HUDRoot:FindFirstChild("Items", true)
+
+		local menuExact = PlayerGui:FindFirstChild("HUDRoot")
+		if menuExact then
+			local m = menuExact:FindFirstChild("Menu", true)
+			local it = menuExact:FindFirstChild("Items", true)
 			if m and not isResetGuiVisible(it) then
 				clickResetButton(m)
 				task.wait(0.35)
-				it = hudRoot:FindFirstChild("Items", true)
+				it = menuExact:FindFirstChild("Items", true)
 			end
 			if it and isResetGuiVisible(it) then
 				clickResetButton(it)
@@ -1091,36 +1072,6 @@ local function openResetTreasure()
 	end
 
 	return invInner, grid
-end
-
-local function closeResetInventory(invInner)
-	if not invInner then
-		return
-	end
-
-	local main = invInner:FindFirstChild("Main")
-	local pageContent = main and main:FindFirstChild("PageContent")
-	local toolbar = pageContent and pageContent:FindFirstChild("ToolBar")
-	local searchField = toolbar and toolbar:FindFirstChild("SearchTextField")
-	local searchBox = findResetTextBox(searchField) or findResetTextBox(toolbar)
-	if searchBox then
-		pcall(function()
-			searchBox.Text = ""
-		end)
-	end
-
-	local closeBtn = invInner:FindFirstChild("Close", true)
-		or (main and main:FindFirstChild("CloseButton", true))
-	if closeBtn and isResetGuiVisible(closeBtn) then
-		clickResetButton(closeBtn)
-		return
-	end
-
-	local hudRoot = PlayerGui:FindFirstChild("HUDRoot")
-	local itemsBtn = hudRoot and hudRoot:FindFirstChild("Items", true)
-	if itemsBtn and isResetGuiVisible(itemsBtn) and isResetGuiVisible(main) then
-		clickResetButton(itemsBtn)
-	end
 end
 
 local function searchResetTreasure(invInner, query)
@@ -1227,49 +1178,7 @@ local function equipResetTile(invInner, tile, displayName)
 		return false
 	end
 
-	local backpack = LocalPlayer:FindFirstChild("Backpack")
-	local oldToolCount = backpack and #backpack:GetChildren() or 0
-	local equipTextBefore = ""
-	for _, desc in ipairs(equipButton:GetDescendants()) do
-		if desc:IsA("TextLabel") then
-			equipTextBefore = desc.Text
-			break
-		end
-	end
-
-	if not clickResetButton(equipButton) then
-		return false
-	end
-
-	local confirmed = false
-	local deadline = os.clock() + 1.5
-	while os.clock() < deadline do
-		task.wait(0.1)
-		if not isResetGuiVisible(equipButton) or not isResetGuiVisible(rightCard) then
-			confirmed = true
-			break
-		end
-		if backpack and #backpack:GetChildren() ~= oldToolCount then
-			confirmed = true
-			break
-		end
-		for _, desc in ipairs(equipButton:GetDescendants()) do
-			if desc:IsA("TextLabel") and desc.Text ~= equipTextBefore then
-				confirmed = true
-				break
-			end
-		end
-		if confirmed then
-			break
-		end
-	end
-
-	if not confirmed then
-		warn("[Reset] Equip did not visibly confirm within timeout.")
-		return false
-	end
-
-	return true
+	return clickResetButton(equipButton)
 end
 
 local function resetCharacterAndWait()
@@ -1310,14 +1219,9 @@ local function resetCharacterAndWait()
 	end
 
 	local newHumanoid = newCharacter:WaitForChild("Humanoid", 10)
+
 	if not newHumanoid then
 		warn("[Reset] New Humanoid not found.")
-		return false
-	end
-
-	local newHrp = newCharacter:WaitForChild("HumanoidRootPart", 10)
-	if not newHrp then
-		warn("[Reset] New HumanoidRootPart not found.")
 		return false
 	end
 
@@ -1346,12 +1250,10 @@ local function resetFruitItem(rawInput)
 
 	isResetting = true
 
-	local invInner = nil
 	local success, result = pcall(function()
 		print("[Reset] Searching Treasure for:", displayName)
 
-		local grid
-		invInner, grid = openResetTreasure()
+		local invInner, grid = openResetTreasure()
 
 		if not invInner or not grid then
 			return false
@@ -1375,17 +1277,12 @@ local function resetFruitItem(rawInput)
 			return false
 		end
 
-		closeResetInventory(invInner)
-		task.wait(0.3)
+		task.wait(0.5)
 
 		print("[Reset] Equipped. Resetting character...")
 
 		return resetCharacterAndWait()
 	end)
-
-	if not success or not result then
-		pcall(closeResetInventory, invInner)
-	end
 
 	isResetting = false
 
@@ -1417,9 +1314,7 @@ local function handleChatCommand(rawText)
 		end
 		lastText = lowerText
 		lastTime = now
-		task.spawn(function()
-			InvokeTradeAction(lowerText)
-		end)
+		InvokeTradeAction(lowerText)
 		return
 	end
 
@@ -1466,9 +1361,7 @@ local function handleChatCommand(rawText)
 			return
 		end
 
-		task.spawn(function()
-			removeItem(targetInput)
-		end)
+		removeItem(targetInput)
 		return
 	end
 
@@ -1495,9 +1388,7 @@ local function handleChatCommand(rawText)
 		return
 	end
 
-	task.spawn(function()
-		addItem(targetInput)
-	end)
+	addItem(targetInput)
 end
 
 -- =========================================================
@@ -1549,50 +1440,16 @@ local function TweenToSeat(hrp, targetCFrame)
 	local speed = 150
 	local duration = math.clamp(distance / speed, 0.2, 1.5)
 
-	local wasAnchored = hrp.Anchored
-	hrp.Anchored = true
-	hrp.AssemblyLinearVelocity = Vector3.zero
-	hrp.AssemblyAngularVelocity = Vector3.zero
-
 	local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
 	local tween = TweenService:Create(hrp, tweenInfo, { CFrame = targetCFrame })
 	tween:Play()
 	tween.Completed:Wait()
-
-	if hrp and hrp.Parent then
-		hrp.AssemblyLinearVelocity = Vector3.zero
-		hrp.Anchored = wasAnchored
-	end
 end
 
 local function IsTradeTableSeat(seat)
 	local parent = seat.Parent
 	return parent and parent.Name == "TradeTable" and (seat.Name == "P1" or seat.Name == "P2")
 end
-
-local cachedTradeSeats = {}
-
-for _, obj in ipairs(Workspace:GetDescendants()) do
-	if obj:IsA("Seat") and IsTradeTableSeat(obj) then
-		cachedTradeSeats[obj] = true
-	end
-end
-
-table.insert(
-	_G.TradeAddConnections,
-	Workspace.DescendantAdded:Connect(function(obj)
-		if obj:IsA("Seat") and IsTradeTableSeat(obj) then
-			cachedTradeSeats[obj] = true
-		end
-	end)
-)
-
-table.insert(
-	_G.TradeAddConnections,
-	Workspace.DescendantRemoving:Connect(function(obj)
-		cachedTradeSeats[obj] = nil
-	end)
-)
 
 local function GetUnauthorizedPlayerInSeat(seat)
 	-- 1. Primary check: actual seat occupant
@@ -1663,7 +1520,7 @@ local function IsTableBlocked(tableModel)
 	return false
 end
 
-_G.TradeSitThread = task.spawn(function()
+task.spawn(function()
 	local lastTable = nil
 	local jumpCooldown = 0
 
@@ -1708,12 +1565,15 @@ _G.TradeSitThread = task.spawn(function()
 			local bestSeat = nil
 			local shortestDist = math.huge
 
-			for seat in pairs(cachedTradeSeats) do
-				if seat.Parent and not IsTableBlocked(seat.Parent) and seat.Parent ~= lastTable then
-					local dist = (hrp.Position - seat.Position).Magnitude
-					if dist < 800 and dist < shortestDist then
-						shortestDist = dist
-						bestSeat = seat
+			for _, obj in pairs(Workspace:GetDescendants()) do
+				if obj:IsA("Seat") and IsTradeTableSeat(obj) then
+					local tableModel = obj.Parent
+					if obj.Parent ~= lastTable and not IsTableBlocked(tableModel) then
+						local dist = (hrp.Position - obj.Position).Magnitude
+						if dist < 800 and dist < shortestDist then
+							shortestDist = dist
+							bestSeat = obj
+						end
 					end
 				end
 			end
