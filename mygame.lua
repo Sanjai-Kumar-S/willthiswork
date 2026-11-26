@@ -1009,6 +1009,7 @@ task.spawn(function()
 				end
 
 				if unauthorizedFound then
+					task.wait(2)
 					humanoid.Sit = false
 					humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
 					jumpCooldown = tick() + 2
