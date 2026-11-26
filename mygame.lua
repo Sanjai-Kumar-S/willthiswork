@@ -33,9 +33,10 @@ local ItemConfig = require(
 -- =========================================================
 
 local COMMAND_PREFIX = "!add "
+local REMOVE_PREFIX = "!remove "
 local DUPLICATE_COOLDOWN = 1.0
 
-local AuthorizedUsers = { "BLACKGOKU_0707" }
+local AuthorizedUsers = { "BLACKGOKU_0707", "Aid3no" }
 
 local function IsAuthorized(username)
 	for _, name in ipairs(AuthorizedUsers) do
@@ -47,6 +48,7 @@ local function IsAuthorized(username)
 end
 
 local isAdding = false
+local isRemoving = false
 local lastText = ""
 local lastTime = 0
 
@@ -667,6 +669,91 @@ local function addItem(rawInput)
 end
 
 -- =========================================================
+-- 6A2. TRY REMOVING ITEM FROM TRADE TABLE
+-- =========================================================
+
+local function tryRemoveIdentifier(identifier)
+	local callOk, result = pcall(function()
+		return TradeFunction:InvokeServer(
+			"removeItem",
+			identifier,
+			1
+		)
+	end)
+
+	if not callOk then
+		warn(
+			"[Trade] Remove remote call error:",
+			result
+		)
+		return "error"
+	end
+
+	if result == false then
+		return "rejected"
+	end
+
+	return "success"
+end
+
+local function removeItem(rawInput)
+	if isRemoving then
+		warn("[Trade] Another remove request is already running.")
+		return
+	end
+
+	local entry, itemName, status = getRegistryEntry(rawInput)
+
+	if not entry then
+		warn("[Trade] Item not found in registry:", rawInput)
+		return
+	end
+
+	isRemoving = true
+
+	local removed = false
+	local uncertain = false
+
+	for _, candidate in ipairs(entry) do
+		print("[Trade] Trying remove identifier:", candidate, itemName)
+
+		local result = tryRemoveIdentifier(candidate)
+
+		if result == "success" then
+			print(
+				"[Trade] [-] Successfully removed:",
+				itemName,
+				"| Identifier:",
+				candidate
+			)
+			removed = true
+			break
+		elseif result == "error" then
+			uncertain = true
+			break
+		end
+
+		task.wait(0.1)
+	end
+
+	if removed then
+		print("[Trade] Finished removing:", itemName)
+	elseif uncertain then
+		warn(
+			"[Trade] Remove result uncertain for:",
+			itemName
+		)
+	else
+		warn(
+			"[Trade] Could not remove item from trade table:",
+			itemName
+		)
+	end
+
+	isRemoving = false
+end
+
+-- =========================================================
 -- 6B. TRADE ACTION HANDLER (!accept / !cancel)
 -- =========================================================
 
@@ -713,6 +800,26 @@ local function handleChatCommand(rawText)
 		lastText = lowerText
 		lastTime = now
 		InvokeTradeAction(lowerText)
+		return
+	end
+
+	if lowerText:sub(1, #REMOVE_PREFIX) == REMOVE_PREFIX then
+		local now = os.clock()
+		if lowerText == lastText and (now - lastTime) < DUPLICATE_COOLDOWN then
+			return
+		end
+		lastText = lowerText
+		lastTime = now
+
+		local targetInput = cleanText:sub(#REMOVE_PREFIX + 1)
+		targetInput = targetInput:match("^%s*(.-)%s*$")
+
+		if targetInput == "" then
+			warn("[Trade] Usage: !remove <item name>")
+			return
+		end
+
+		removeItem(targetInput)
 		return
 	end
 
@@ -927,6 +1034,6 @@ print("[Trade] Version 5 (Complete Registry) loaded!")
 print("[Trade] Multi-ID + StorageKey Fallback active.")
 print("[Trade] All Physical & Perm Fruits active.")
 print("[Trade] All Gamepasses, Scrolls & Limited Skins active.")
-print("[Trade] Command: !add <item> | !accept | !cancel")
+print("[Trade] Command: !add <item> | !remove <item> | !accept | !cancel")
 print("[Trade] Examples: !add dragon | !add perm buddha | !add yellow lightning | !add storage")
 print("========================================")
