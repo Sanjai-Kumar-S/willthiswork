@@ -35,7 +35,7 @@ local ItemConfig = require(
 local COMMAND_PREFIX = "!add "
 local DUPLICATE_COOLDOWN = 1.0
 
-local AuthorizedUsers = { "BLACKGOKU_0707", "Aid3no" }
+local AuthorizedUsers = { "BLACKGOKU_0707" }
 
 local function IsAuthorized(username)
 	for _, name in ipairs(AuthorizedUsers) do
