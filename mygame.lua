@@ -909,31 +909,55 @@ local function IsTradeTableSeat(seat)
 end
 
 local function GetUnauthorizedPlayerInSeat(seat)
-	local overlapParams = OverlapParams.new()
-	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
-	overlapParams.RespectCanCollide = false
+	-- 1. Primary check: actual seat occupant
+	local occupant = seat.Occupant
 
-	local partsInRegion = Workspace:GetPartsInPart(seat, overlapParams)
-	for _, part in ipairs(partsInRegion) do
-		local character = part.Parent
-		if character and character:FindFirstChildOfClass("Humanoid") then
-			local player = Players:GetPlayerFromCharacter(character)
-			if player and player ~= LocalPlayer then
-				if not IsAuthorized(player.Name) then
-					return player.Name
-				else
-					return nil
-				end
-			end
-		end
-	end
+	if occupant then
+		local character = occupant.Parent
+		local player = character and Players:GetPlayerFromCharacter(character)
 
-	if seat.Occupant then
-		local char = seat.Occupant.Parent
-		local player = Players:GetPlayerFromCharacter(char)
 		if player and player ~= LocalPlayer then
 			if not IsAuthorized(player.Name) then
 				return player.Name
+			end
+		end
+
+		-- A real occupant exists; don't run spatial fallback.
+		return nil
+	end
+
+	-- 2. Fallback: check only when Occupant is empty
+	local overlapParams = OverlapParams.new()
+	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+	if LocalPlayer.Character then
+		overlapParams.FilterDescendantsInstances = { LocalPlayer.Character }
+	end
+
+	local parts = Workspace:GetPartsInPart(seat, overlapParams)
+	local checkedPlayers = {}
+
+	for _, part in ipairs(parts) do
+		local character = part:FindFirstAncestorOfClass("Model")
+
+		if character and not checkedPlayers[character] then
+			checkedPlayers[character] = true
+
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			local hrp = character:FindFirstChild("HumanoidRootPart")
+
+			if humanoid and hrp and not humanoid.SeatPart then
+				local player = Players:GetPlayerFromCharacter(character)
+
+				if player and player ~= LocalPlayer then
+					local distance = (hrp.Position - seat.Position).Magnitude
+
+					-- Require the character to be very close to the seat.
+					if distance <= 4 and humanoid.Health > 0 then
+						if not IsAuthorized(player.Name) then
+							return player.Name
+						end
+					end
+				end
 			end
 		end
 	end
@@ -1018,7 +1042,15 @@ task.spawn(function()
 				local targetCF = bestSeat.CFrame + Vector3.new(0, 3, 0)
 				TweenToSeat(hrp, targetCF)
 				task.wait(0.2)
-				bestSeat:Sit(humanoid)
+				if bestSeat
+					and bestSeat.Parent
+					and bestSeat.Occupant == nil
+					and not IsTableBlocked(bestSeat.Parent)
+					and humanoid.Health > 0
+					and humanoid.SeatPart == nil then
+
+					bestSeat:Sit(humanoid)
+				end
 			end
 		end
 	end
