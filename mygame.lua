@@ -676,8 +676,7 @@ local function tryRemoveIdentifier(identifier)
 	local callOk, result = pcall(function()
 		return TradeFunction:InvokeServer(
 			"removeItem",
-			identifier,
-			1
+			identifier
 		)
 	end)
 
@@ -689,7 +688,7 @@ local function tryRemoveIdentifier(identifier)
 		return "error"
 	end
 
-	if result == false then
+	if result == false or result == nil then
 		return "rejected"
 	end
 
