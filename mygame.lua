@@ -1,6 +1,6 @@
 -- =========================================================
 -- BLOX FRUITS AUTO-SIT + !reset <fruitname>
--- Uses exact HUDRoot & Inventory.Inventory.Main paths
+-- Hard Reset Lock + Single-Trigger Button Click
 -- =========================================================
 
 local Players = game:GetService("Players")
@@ -47,6 +47,14 @@ _G.TradeAddConnections = {}
 _G.TradeAddSessionId = (_G.TradeAddSessionId or 0) + 1
 local CURRENT_SESSION_ID = _G.TradeAddSessionId
 _G.TradeAutoSitPaused = false
+_G.TradeResetLockUntil = 0
+
+local function isAutoSitBlocked()
+	return (not autoSitEnabled)
+		or _G.TradeAutoSitPaused
+		or isResetting
+		or (os.clock() < (_G.TradeResetLockUntil or 0))
+end
 
 -- =========================================================
 -- 2. FRUIT NAME MAPPING
@@ -161,15 +169,13 @@ end
 
 local function clickResetButton(target)
 	if not target or not target:IsA("GuiObject") then return false end
-
 	local button = target
 	if not button:IsA("GuiButton") then
 		button = target:FindFirstAncestorWhichIsA("GuiButton") or target:FindFirstChildWhichIsA("GuiButton", true) or target
 	end
-
 	local fired = false
 	if typeof(getconnections) == "function" then
-		for _, sigName in ipairs({ "Activated", "MouseButton1Click", "MouseButton1Down" }) do
+		for _, sigName in ipairs({ "Activated", "MouseButton1Click" }) do
 			local ok, conns = pcall(function()
 				return getconnections(button[sigName])
 			end)
@@ -180,39 +186,26 @@ local function clickResetButton(target)
 						fired = true
 					end)
 				end
+				if fired then return true end
 			end
 		end
 	end
-
-	if not fired and typeof(firesignal) == "function" then
-		pcall(function()
+	if typeof(firesignal) == "function" then
+		local ok = pcall(function()
 			firesignal(button.Activated)
-			fired = true
 		end)
-		pcall(function()
-			firesignal(button.MouseButton1Click)
-			fired = true
-		end)
+		if ok then return true end
 	end
-
-	if button:IsA("GuiButton") then
-		pcall(function()
-			button:Activate()
-		end)
-	end
-
 	local inset = GuiService:GetGuiInset()
 	local pos = button.AbsolutePosition
 	local size = button.AbsoluteSize
 	local x = pos.X + (size.X * 0.5)
 	local y = pos.Y + (size.Y * 0.5) + inset.Y
-
 	pcall(function()
 		VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
 		task.wait(0.05)
 		VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
 	end)
-
 	return true
 end
 
@@ -262,12 +255,12 @@ local function stepOffTradeTableAndMoveAway()
 		local targetPos = seatPart.Position + awayDir * 10 + Vector3.new(0, 2, 0)
 		hrp.AssemblyLinearVelocity = Vector3.zero
 		hrp.CFrame = CFrame.new(targetPos, targetPos + awayDir)
-		task.wait(0.3)
+		task.wait(0.35)
 	elseif humanoid.Sit then
 		humanoid.Sit = false
 		humanoid.Jump = true
 		humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-		task.wait(0.3)
+		task.wait(0.35)
 	end
 end
 
@@ -321,7 +314,7 @@ local function openResetTreasure()
 	end
 
 	clickResetButton(treasureButton)
-	task.wait(0.45)
+	task.wait(0.5)
 
 	local pageContent = main:FindFirstChild("PageContent")
 	local grid = pageContent and pageContent:FindFirstChild("TileGrid")
@@ -344,7 +337,7 @@ local function searchResetTreasure(invInner, query)
 	end
 
 	clickResetButton(searchField)
-	task.wait(0.15)
+	task.wait(0.2)
 
 	local searchBox = findResetTextBox(searchField) or findResetTextBox(toolbar)
 	if not searchBox then
@@ -376,7 +369,7 @@ local function searchResetTreasure(invInner, query)
 		searchBox:ReleaseFocus(true)
 	end)
 
-	task.wait(0.4)
+	task.wait(0.45)
 	return true
 end
 
@@ -420,7 +413,7 @@ local function equipResetTile(invInner, tile, displayName)
 	if not tile then return false end
 
 	clickResetButton(tile)
-	task.wait(0.45)
+	task.wait(0.5)
 
 	local rightCard = invInner and invInner:FindFirstChild("RightCard")
 	if not rightCard or not isResetGuiVisible(rightCard) then
@@ -476,7 +469,7 @@ local function resetCharacterAndWait()
 	pcall(function()
 		humanoid.Health = 0
 	end)
-	task.wait(0.25)
+	task.wait(0.3)
 	if humanoid.Health > 0 then
 		pcall(function()
 			humanoid:ChangeState(Enum.HumanoidStateType.Dead)
@@ -484,7 +477,7 @@ local function resetCharacterAndWait()
 	end
 
 	local startTime = os.clock()
-	while not newCharacter and os.clock() - startTime < 15 do
+	while not newCharacter and os.clock() - startTime < 20 do
 		task.wait(0.1)
 	end
 
@@ -495,10 +488,20 @@ local function resetCharacterAndWait()
 		return false
 	end
 
-	newCharacter:WaitForChild("Humanoid", 10)
-	newCharacter:WaitForChild("HumanoidRootPart", 10)
-	task.wait(0.5)
-	print("[Reset] Character respawned successfully.")
+	local wsWait = os.clock()
+	while newCharacter.Parent ~= Workspace and os.clock() - wsWait < 10 do
+		task.wait(0.1)
+	end
+
+	local newHum = newCharacter:WaitForChild("Humanoid", 10)
+	local newHrp = newCharacter:WaitForChild("HumanoidRootPart", 10)
+	if not newHum or not newHrp then
+		warn("[Reset] New character parts missing.")
+		return false
+	end
+
+	task.wait(1.5)
+	print("[Reset] Character respawned & settled.")
 	return true
 end
 
@@ -517,6 +520,7 @@ local function resetFruitItem(rawInput)
 	isResetting = true
 	autoSitEnabled = false
 	_G.TradeAutoSitPaused = true
+	_G.TradeResetLockUntil = os.clock() + 30
 
 	local success, result = pcall(function()
 		stepOffTradeTableAndMoveAway()
@@ -538,10 +542,16 @@ local function resetFruitItem(rawInput)
 			return false
 		end
 
-		task.wait(0.5)
+		task.wait(0.8)
 		print("[Reset] Equipped. Resetting character...")
 		return resetCharacterAndWait()
 	end)
+
+	if success and result then
+		_G.TradeResetLockUntil = os.clock() + 1.0
+	else
+		_G.TradeResetLockUntil = os.clock() + 3.0
+	end
 
 	_G.TradeAutoSitPaused = false
 	autoSitEnabled = true
@@ -633,7 +643,7 @@ local function TweenToSeat(hrp, targetCFrame, sessionId)
 	end)
 
 	while not completed do
-		if _G.TradeAddSessionId ~= sessionId or not autoSitEnabled or _G.TradeAutoSitPaused or isResetting then
+		if _G.TradeAddSessionId ~= sessionId or isAutoSitBlocked() then
 			tween:Cancel()
 			conn:Disconnect()
 			return false
@@ -726,7 +736,7 @@ task.spawn(function()
 	while _G.TradeAddSessionId == CURRENT_SESSION_ID do
 		task.wait(0.5)
 		if _G.TradeAddSessionId ~= CURRENT_SESSION_ID then break end
-		if not autoSitEnabled or _G.TradeAutoSitPaused or isResetting then continue end
+		if isAutoSitBlocked() then continue end
 
 		local character = LocalPlayer.Character
 		if not character or not character:FindFirstChild("HumanoidRootPart") then continue end
@@ -752,7 +762,7 @@ task.spawn(function()
 
 				if unauthorizedFound then
 					task.wait(2)
-					if _G.TradeAddSessionId ~= CURRENT_SESSION_ID or not autoSitEnabled or _G.TradeAutoSitPaused or isResetting then continue end
+					if _G.TradeAddSessionId ~= CURRENT_SESSION_ID or isAutoSitBlocked() then continue end
 					humanoid.Sit = false
 					humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
 					jumpCooldown = tick() + 2
@@ -785,7 +795,7 @@ task.spawn(function()
 				local tweenOk = TweenToSeat(hrp, targetCF, CURRENT_SESSION_ID)
 				if not tweenOk then continue end
 				task.wait(0.2)
-				if _G.TradeAddSessionId ~= CURRENT_SESSION_ID or not autoSitEnabled or _G.TradeAutoSitPaused or isResetting then continue end
+				if _G.TradeAddSessionId ~= CURRENT_SESSION_ID or isAutoSitBlocked() then continue end
 				if bestSeat
 					and bestSeat.Parent
 					and bestSeat.Occupant == nil
