@@ -7,8 +7,6 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextChatService = game:GetService("TextChatService")
-local Workspace = game:GetService("Workspace")
-local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -33,22 +31,9 @@ local ItemConfig = require(
 -- =========================================================
 
 local COMMAND_PREFIX = "!add "
-local REMOVE_PREFIX = "!remove "
 local DUPLICATE_COOLDOWN = 1.0
 
-local AuthorizedUsers = { "BLACKGOKU_0707", "Aid3no" }
-
-local function IsAuthorized(username)
-	for _, name in ipairs(AuthorizedUsers) do
-		if name == username then
-			return true
-		end
-	end
-	return false
-end
-
 local isAdding = false
-local isRemoving = false
 local lastText = ""
 local lastTime = 0
 
@@ -669,90 +654,6 @@ local function addItem(rawInput)
 end
 
 -- =========================================================
--- 6A2. TRY REMOVING ITEM FROM TRADE TABLE
--- =========================================================
-
-local function tryRemoveIdentifier(identifier)
-	local callOk, result = pcall(function()
-		return TradeFunction:InvokeServer(
-			"removeItem",
-			identifier
-		)
-	end)
-
-	if not callOk then
-		warn(
-			"[Trade] Remove remote call error:",
-			result
-		)
-		return "error"
-	end
-
-	if result == false or result == nil then
-		return "rejected"
-	end
-
-	return "success"
-end
-
-local function removeItem(rawInput)
-	if isRemoving then
-		warn("[Trade] Another remove request is already running.")
-		return
-	end
-
-	local entry, itemName, status = getRegistryEntry(rawInput)
-
-	if not entry then
-		warn("[Trade] Item not found in registry:", rawInput)
-		return
-	end
-
-	isRemoving = true
-
-	local removed = false
-	local uncertain = false
-
-	for _, candidate in ipairs(entry) do
-		print("[Trade] Trying remove identifier:", candidate, itemName)
-
-		local result = tryRemoveIdentifier(candidate)
-
-		if result == "success" then
-			print(
-				"[Trade] [-] Successfully removed:",
-				itemName,
-				"| Identifier:",
-				candidate
-			)
-			removed = true
-			break
-		elseif result == "error" then
-			uncertain = true
-			break
-		end
-
-		task.wait(0.1)
-	end
-
-	if removed then
-		print("[Trade] Finished removing:", itemName)
-	elseif uncertain then
-		warn(
-			"[Trade] Remove result uncertain for:",
-			itemName
-		)
-	else
-		warn(
-			"[Trade] Could not remove item from trade table:",
-			itemName
-		)
-	end
-
-	isRemoving = false
-end
-
--- =========================================================
 -- 6B. TRADE ACTION HANDLER (!accept / !cancel)
 -- =========================================================
 
@@ -802,26 +703,6 @@ local function handleChatCommand(rawText)
 		return
 	end
 
-	if lowerText:sub(1, #REMOVE_PREFIX) == REMOVE_PREFIX then
-		local now = os.clock()
-		if lowerText == lastText and (now - lastTime) < DUPLICATE_COOLDOWN then
-			return
-		end
-		lastText = lowerText
-		lastTime = now
-
-		local targetInput = cleanText:sub(#REMOVE_PREFIX + 1)
-		targetInput = targetInput:match("^%s*(.-)%s*$")
-
-		if targetInput == "" then
-			warn("[Trade] Usage: !remove <item name>")
-			return
-		end
-
-		removeItem(targetInput)
-		return
-	end
-
 	if lowerText:sub(1, #COMMAND_PREFIX) ~= COMMAND_PREFIX then
 		return
 	end
@@ -858,204 +739,19 @@ if TextChatService
 	table.insert(
 		_G.TradeAddConnections,
 		TextChatService.MessageReceived:Connect(function(message)
-			if message.TextSource then
-				local sender = Players:GetPlayerByUserId(message.TextSource.UserId)
-				if sender and IsAuthorized(sender.Name) then
-					handleChatCommand(message.Text)
-				end
+			if message.TextSource
+				and message.TextSource.UserId == LocalPlayer.UserId then
+
+				handleChatCommand(message.Text)
 			end
 		end)
 	)
 else
-	for _, plr in ipairs(Players:GetPlayers()) do
-		if IsAuthorized(plr.Name) then
-			table.insert(
-				_G.TradeAddConnections,
-				plr.Chatted:Connect(handleChatCommand)
-			)
-		end
-	end
 	table.insert(
 		_G.TradeAddConnections,
-		Players.PlayerAdded:Connect(function(plr)
-			if IsAuthorized(plr.Name) then
-				table.insert(
-					_G.TradeAddConnections,
-					plr.Chatted:Connect(handleChatCommand)
-				)
-			end
-		end)
+		LocalPlayer.Chatted:Connect(handleChatCommand)
 	)
 end
-
--- =========================================================
--- 8B. STRICT WHITELIST AUTO-SIT & TABLE SWITCHING
--- =========================================================
-
-local function TweenToSeat(hrp, targetCFrame)
-	local distance = (hrp.Position - targetCFrame.Position).Magnitude
-	local speed = 150
-	local duration = math.clamp(distance / speed, 0.2, 1.5)
-
-	local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
-	local tween = TweenService:Create(hrp, tweenInfo, { CFrame = targetCFrame })
-	tween:Play()
-	tween.Completed:Wait()
-end
-
-local function IsTradeTableSeat(seat)
-	local parent = seat.Parent
-	return parent and parent.Name == "TradeTable" and (seat.Name == "P1" or seat.Name == "P2")
-end
-
-local function GetUnauthorizedPlayerInSeat(seat)
-	-- 1. Primary check: actual seat occupant
-	local occupant = seat.Occupant
-
-	if occupant then
-		local character = occupant.Parent
-		local player = character and Players:GetPlayerFromCharacter(character)
-
-		if player and player ~= LocalPlayer then
-			if not IsAuthorized(player.Name) then
-				return player.Name
-			end
-		end
-
-		-- A real occupant exists; don't run spatial fallback.
-		return nil
-	end
-
-	-- 2. Fallback: check only when Occupant is empty
-	local overlapParams = OverlapParams.new()
-	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
-	if LocalPlayer.Character then
-		overlapParams.FilterDescendantsInstances = { LocalPlayer.Character }
-	end
-
-	local parts = Workspace:GetPartsInPart(seat, overlapParams)
-	local checkedPlayers = {}
-
-	for _, part in ipairs(parts) do
-		local character = part:FindFirstAncestorOfClass("Model")
-
-		if character and not checkedPlayers[character] then
-			checkedPlayers[character] = true
-
-			local humanoid = character:FindFirstChildOfClass("Humanoid")
-			local hrp = character:FindFirstChild("HumanoidRootPart")
-
-			if humanoid and hrp and not humanoid.SeatPart then
-				local player = Players:GetPlayerFromCharacter(character)
-
-				if player and player ~= LocalPlayer then
-					local distance = (hrp.Position - seat.Position).Magnitude
-
-					-- Require the character to be very close to the seat.
-					if distance <= 4 and humanoid.Health > 0 then
-						if not IsAuthorized(player.Name) then
-							return player.Name
-						end
-					end
-				end
-			end
-		end
-	end
-
-	return nil
-end
-
-local function IsTableBlocked(tableModel)
-	for _, child in ipairs(tableModel:GetChildren()) do
-		if child:IsA("Seat") and IsTradeTableSeat(child) then
-			local unauth = GetUnauthorizedPlayerInSeat(child)
-			if unauth then
-				return true
-			end
-		end
-	end
-	return false
-end
-
-task.spawn(function()
-	local lastTable = nil
-	local jumpCooldown = 0
-
-	while true do
-		task.wait(0.5)
-
-		local character = LocalPlayer.Character
-		if not character or not character:FindFirstChild("HumanoidRootPart") then continue end
-		local hrp = character.HumanoidRootPart
-		local humanoid = character:FindFirstChildOfClass("Humanoid")
-		if not humanoid then continue end
-
-		if humanoid.SeatPart then
-			local currentSeat = humanoid.SeatPart
-			if IsTradeTableSeat(currentSeat) then
-				lastTable = currentSeat.Parent
-
-				local tableModel = currentSeat.Parent
-				local unauthorizedFound = nil
-
-				for _, child in ipairs(tableModel:GetChildren()) do
-					if child:IsA("Seat") and IsTradeTableSeat(child) then
-						local unauthName = GetUnauthorizedPlayerInSeat(child)
-						if unauthName then
-							unauthorizedFound = unauthName
-							break
-						end
-					end
-				end
-
-				if unauthorizedFound then
-					task.wait(2)
-					humanoid.Sit = false
-					humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-					jumpCooldown = tick() + 2
-					task.wait(0.8)
-				end
-			end
-		else
-			if tick() < jumpCooldown then continue end
-
-			local bestSeat = nil
-			local shortestDist = math.huge
-
-			for _, obj in pairs(Workspace:GetDescendants()) do
-				if obj:IsA("Seat") and IsTradeTableSeat(obj) then
-					local tableModel = obj.Parent
-					if obj.Parent ~= lastTable and not IsTableBlocked(tableModel) then
-						local dist = (hrp.Position - obj.Position).Magnitude
-						if dist < 800 and dist < shortestDist then
-							shortestDist = dist
-							bestSeat = obj
-						end
-					end
-				end
-			end
-
-			if not bestSeat and lastTable then
-				lastTable = nil
-			end
-
-			if bestSeat then
-				local targetCF = bestSeat.CFrame + Vector3.new(0, 3, 0)
-				TweenToSeat(hrp, targetCF)
-				task.wait(0.2)
-				if bestSeat
-					and bestSeat.Parent
-					and bestSeat.Occupant == nil
-					and not IsTableBlocked(bestSeat.Parent)
-					and humanoid.Health > 0
-					and humanoid.SeatPart == nil then
-
-					bestSeat:Sit(humanoid)
-				end
-			end
-		end
-	end
-end)
 
 -- =========================================================
 -- 9. READY
@@ -1066,6 +762,6 @@ print("[Trade] Version 5 (Complete Registry) loaded!")
 print("[Trade] Multi-ID + StorageKey Fallback active.")
 print("[Trade] All Physical & Perm Fruits active.")
 print("[Trade] All Gamepasses, Scrolls & Limited Skins active.")
-print("[Trade] Command: !add <item> | !remove <item> | !accept | !cancel")
+print("[Trade] Command: !add <item> | !accept | !cancel")
 print("[Trade] Examples: !add dragon | !add perm buddha | !add yellow lightning | !add storage")
 print("========================================")
