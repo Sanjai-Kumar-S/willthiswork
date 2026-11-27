@@ -1,17 +1,16 @@
 -- =========================================================
--- BLOX FRUITS AUTO-SIT + !reset <fruitname> (2-RESET FLOW)
--- Stop Sit -> Reset #1 -> Menu/Items/Treasure/Search/Equip -> Reset #2 -> Resume Sit
+-- BLOX FRUITS AUTO-SIT + !reset <fruitname>
+-- Direct CommF_ LoadFruit + Seated Reset (Zero Menu UI)
 -- =========================================================
 
 local Players = game:GetService("Players")
 local TextChatService = game:GetService("TextChatService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-local GuiService = game:GetService("GuiService")
 
 local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local CommF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
 -- =========================================================
 -- 1. CONFIGURATION & SESSION CLEANUP
@@ -31,9 +30,9 @@ local function IsAuthorized(username)
 end
 
 local isResetting = false
-local autoSitEnabled = true
 local lastText = ""
 local lastTime = 0
+local lastTable = nil
 
 if _G.TradeAddConnections then
 	for _, connection in ipairs(_G.TradeAddConnections) do
@@ -46,627 +45,202 @@ end
 _G.TradeAddConnections = {}
 _G.TradeAddSessionId = (_G.TradeAddSessionId or 0) + 1
 local CURRENT_SESSION_ID = _G.TradeAddSessionId
-_G.TradeAutoSitPaused = false
-_G.TradeResetLockUntil = 0
-
-local function isAutoSitBlocked()
-	return (not autoSitEnabled)
-		or _G.TradeAutoSitPaused
-		or isResetting
-		or (os.clock() < (_G.TradeResetLockUntil or 0))
-end
 
 -- =========================================================
--- 2. FRUIT NAME MAPPING
+-- 2. FRUIT NAME & STORAGE KEY MAPPING
 -- =========================================================
 
 local Aliases = {
-	["leo"]      = "tiger",
-	["leopard"]  = "tiger",
-	["t rex"]    = "trex",
-	["t-rex"]    = "trex",
-	["lighting"] = "lightning",
-	["chop"]     = "blade",
-	["falcon"]   = "eagle",
-	["revive"]   = "ghost",
-	["barrier"]  = "creation",
-	["door"]     = "portal",
-	["rumble"]   = "lightning",
-	["paw"]      = "pain",
-	["soul"]     = "spirit",
+	["leo"]         = "tiger",
+	["leopard"]     = "tiger",
+	["t rex"]       = "trex",
+	["t-rex"]       = "trex",
+	["lighting"]    = "lightning",
+	["chop"]        = "blade",
+	["falcon"]      = "eagle",
+	["revive"]      = "ghost",
+	["barrier"]     = "creation",
+	["door"]        = "portal",
+	["rumble"]      = "lightning",
+	["paw"]         = "pain",
+	["soul"]        = "spirit",
+	["west dragon"] = "dragon west",
+	["east dragon"] = "dragon east",
 }
 
-local ResetDisplayNames = {
-	["rocket"] = "Rocket",
-	["spin"] = "Spin",
-	["blade"] = "Blade",
-	["spring"] = "Spring",
-	["bomb"] = "Bomb",
-	["smoke"] = "Smoke",
-	["spike"] = "Spike",
-	["flame"] = "Flame",
-	["ice"] = "Ice",
-	["sand"] = "Sand",
-	["dark"] = "Dark",
-	["eagle"] = "Eagle",
-	["diamond"] = "Diamond",
-	["light"] = "Light",
-	["rubber"] = "Rubber",
-	["ghost"] = "Ghost",
-	["magma"] = "Magma",
-	["quake"] = "Quake",
-	["buddha"] = "Buddha",
-	["love"] = "Love",
-	["creation"] = "Creation",
-	["spider"] = "Spider",
-	["sound"] = "Sound",
-	["phoenix"] = "Phoenix",
-	["portal"] = "Portal",
-	["lightning"] = "Lightning",
-	["pain"] = "Pain",
-	["blizzard"] = "Blizzard",
-	["gravity"] = "Gravity",
-	["mammoth"] = "Mammoth",
-	["trex"] = "T-Rex",
-	["dough"] = "Dough",
-	["shadow"] = "Shadow",
-	["venom"] = "Venom",
-	["gas"] = "Gas",
-	["spirit"] = "Spirit",
-	["tiger"] = "Tiger",
-	["yeti"] = "Yeti",
-	["magnet"] = "Magnet",
-	["kitsune"] = "Kitsune",
-	["control"] = "Control",
-	["dragon west"] = "Dragon (West)",
-	["west dragon"] = "Dragon (West)",
-	["dragon east"] = "Dragon (East)",
-	["east dragon"] = "Dragon (East)",
-	["dragon"] = "Dragon",
+local FruitStorageKeys = {
+	["rocket"]      = "Rocket-Rocket",
+	["spin"]        = "Spin-Spin",
+	["blade"]       = "Blade-Blade",
+	["spring"]      = "Spring-Spring",
+	["bomb"]        = "Bomb-Bomb",
+	["smoke"]       = "Smoke-Smoke",
+	["spike"]       = "Spike-Spike",
+	["flame"]       = "Flame-Flame",
+	["ice"]         = "Ice-Ice",
+	["sand"]        = "Sand-Sand",
+	["dark"]        = "Dark-Dark",
+	["eagle"]       = "Eagle-Eagle",
+	["diamond"]     = "Diamond-Diamond",
+	["light"]       = "Light-Light",
+	["rubber"]      = "Rubber-Rubber",
+	["ghost"]       = "Ghost-Ghost",
+	["magma"]       = "Magma-Magma",
+	["quake"]       = "Quake-Quake",
+	["buddha"]      = "Buddha-Buddha",
+	["love"]        = "Love-Love",
+	["creation"]    = "Creation-Creation",
+	["spider"]      = "Spider-Spider",
+	["sound"]       = "Sound-Sound",
+	["phoenix"]     = "Phoenix-Phoenix",
+	["portal"]      = "Portal-Portal",
+	["lightning"]   = "Lightning-Lightning",
+	["pain"]        = "Pain-Pain",
+	["blizzard"]    = "Blizzard-Blizzard",
+	["gravity"]     = "Gravity-Gravity",
+	["mammoth"]     = "Mammoth-Mammoth",
+	["trex"]        = "T-Rex-T-Rex",
+	["dough"]       = "Dough-Dough",
+	["shadow"]      = "Shadow-Shadow",
+	["venom"]       = "Venom-Venom",
+	["gas"]         = "Gas-Gas",
+	["spirit"]      = "Spirit-Spirit",
+	["tiger"]       = "Tiger-Tiger",
+	["yeti"]        = "Yeti-Yeti",
+	["magnet"]      = "Magnet-Magnet",
+	["kitsune"]     = "Kitsune-Kitsune",
+	["control"]     = "Control-Control",
+	["dragon west"] = "Dragon (West)-Dragon (West)",
+	["dragon east"] = "Dragon (East)-Dragon (East)",
+	["dragon"]      = "Dragon-Dragon",
 }
 
 local function normalizeName(name)
-	name = tostring(name or ""):lower():match("^%s*(.-)%s*$") or ""
+	name = tostring(name or ""):lower():gsub("%s+", " "):match("^%s*(.-)%s*$") or ""
 	name = name:gsub("^<(.-)>$", "%1"):match("^%s*(.-)%s*$") or ""
 	return Aliases[name] or name
 end
 
-local function resetNormalize(text)
-	return tostring(text or "")
-		:gsub("<[^>]->", "")
-		:lower()
-		:gsub("%s+", " ")
-		:match("^%s*(.-)%s*$")
-end
-
-local function resolveDisplayName(rawInput)
+local function resolveStorageCandidates(rawInput)
 	local key = normalizeName(rawInput)
 	if key == "" then return nil end
-	if ResetDisplayNames[key] then
-		return ResetDisplayNames[key]
+
+	if key == "dragon" then
+		return { "Dragon (West)-Dragon (West)", "Dragon (East)-Dragon (East)", "Dragon-Dragon" }
 	end
-	return key:gsub("(%a)([%w_']*)", function(first, rest)
+
+	if FruitStorageKeys[key] then
+		return { FruitStorageKeys[key] }
+	end
+
+	local title = key:gsub("(%a)([%w_']*)", function(first, rest)
 		return first:upper() .. rest
 	end)
+	return { title .. "-" .. title }
 end
 
 -- =========================================================
--- 3. UI & RESET HELPERS
+-- 3. DIRECT LOADFRUIT & SEATED RESET
 -- =========================================================
 
-local function isResetGuiVisible(gui)
-	if not gui then return false end
-	local cur = gui
-	while cur and cur ~= PlayerGui do
-		if cur:IsA("ScreenGui") and not cur.Enabled then return false end
-		if cur:IsA("GuiObject") and not cur.Visible then return false end
-		cur = cur.Parent
-	end
-	if gui:IsA("GuiObject") then
-		return gui.AbsoluteSize.X > 1 and gui.AbsoluteSize.Y > 1
-	end
-	return true
-end
+local function hasFruitInBackpackOrChar(storageKey)
+	local baseName = storageKey:match("^(.-)%-") or storageKey
+	local target = baseName:lower()
 
-local function clickResetButton(target)
-	if not target or not target:IsA("GuiObject") then return false end
-
-	local button = target
-	if not button:IsA("GuiButton") then
-		button = target:FindFirstAncestorWhichIsA("GuiButton") or target:FindFirstChildWhichIsA("GuiButton", true) or target
-	end
-
-	local fired = false
-	if typeof(getconnections) == "function" then
-		for _, sigName in ipairs({ "Activated", "MouseButton1Click" }) do
-			local ok, conns = pcall(function()
-				return getconnections(button[sigName])
-			end)
-			if ok and conns and #conns > 0 then
-				for _, conn in ipairs(conns) do
-					pcall(function()
-						conn:Fire()
-						fired = true
-					end)
+	for _, container in ipairs({ LocalPlayer:FindFirstChild("Backpack"), LocalPlayer.Character }) do
+		if container then
+			for _, item in ipairs(container:GetChildren()) do
+				if item:IsA("Tool") and item.Name:lower():find(target, 1, true) then
+					return true, item.Name
 				end
 			end
 		end
 	end
-
-	if typeof(firesignal) == "function" then
-		pcall(function()
-			firesignal(button.Activated)
-			fired = true
-		end)
-	end
-
-	if button:IsA("GuiObject") and button.AbsoluteSize.X > 1 and button.AbsoluteSize.Y > 1 then
-		local inset = GuiService:GetGuiInset()
-		local pos = button.AbsolutePosition
-		local size = button.AbsoluteSize
-		local x = pos.X + (size.X * 0.5)
-		local y = pos.Y + (size.Y * 0.5) + inset.Y
-
-		pcall(function()
-			VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
-			task.wait(0.05)
-			VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
-			fired = true
-		end)
-	end
-
-	return fired
+	return false, nil
 end
 
-local function findInventoryRoots()
-	local invGui = PlayerGui:FindFirstChild("Inventory")
-	local invInner = invGui and invGui:FindFirstChild("Inventory")
-	local main = invInner and invInner:FindFirstChild("Main")
-
-	if main then
-		return invGui, invInner, main
-	end
-
-	for _, gui in ipairs(PlayerGui:GetChildren()) do
-		if gui:IsA("ScreenGui") and gui.Name:lower():find("inv", 1, true) then
-			local inner = gui:FindFirstChild("Inventory") or gui
-			local m = inner:FindFirstChild("Main") or gui:FindFirstChild("Main", true)
-			if m then
-				return gui, m.Parent, m
-			end
-		end
-	end
-
-	return invGui, invInner, main
-end
-
-local function findTreasureTab(main)
-	local nav = main:FindFirstChild("NavigationRail")
-	if nav then
-		local cat2 = nav:FindFirstChild("Category2")
-		if cat2 then return cat2 end
-	end
-
-	local searchRoot = nav or main
-	for _, obj in ipairs(searchRoot:GetDescendants()) do
-		if obj:IsA("GuiObject") then
-			local n = obj.Name:lower()
-			if n:find("category2", 1, true) or n:find("treas", 1, true) then
-				return obj
-			end
-			if (obj:IsA("TextLabel") or obj:IsA("TextButton")) and obj.Text:lower():find("treas", 1, true) then
-				return obj:FindFirstAncestorWhichIsA("GuiButton") or obj
-			end
-		end
-	end
-
-	return nil
-end
-
-local function findTileGrid(main)
-	local pageContent = main:FindFirstChild("PageContent")
-	if pageContent then
-		local nestedGrid = pageContent:FindFirstChild("Grid")
-			and pageContent.Grid:FindFirstChild("Content")
-			and pageContent.Grid.Content:FindFirstChild("Grid")
-		if nestedGrid then return pageContent, nestedGrid end
-
-		local tileGrid = pageContent:FindFirstChild("TileGrid")
-		if tileGrid then return pageContent, tileGrid end
-
-		for _, obj in ipairs(pageContent:GetDescendants()) do
-			if obj.Name == "Grid" and obj:FindFirstChild("Tile") then
-				return pageContent, obj
-			end
-		end
-	end
-
-	for _, obj in ipairs(main:GetDescendants()) do
-		if obj.Name == "Grid" and obj:FindFirstChild("Tile") then
-			return pageContent or main, obj
-		end
-	end
-
-	return pageContent, nil
-end
-
-local function findResetTextBox(parent)
-	if not parent then return nil end
-	if parent:IsA("TextBox") then return parent end
-	for _, obj in ipairs(parent:GetDescendants()) do
-		if obj:IsA("TextBox") then return obj end
-	end
-	return nil
-end
-
-local function openResetTreasure()
-	local _, invInner, main = findInventoryRoots()
-
-	if not isResetGuiVisible(main) then
-		local hud = PlayerGui:FindFirstChild("HUDRoot")
-		if hud then
-			local m = hud:FindFirstChild("Menu", true)
-			local it = hud:FindFirstChild("Items", true)
-
-			if m and not isResetGuiVisible(it) then
-				clickResetButton(m)
-				local w0 = os.clock()
-				while os.clock() - w0 < 1.2 do
-					it = hud:FindFirstChild("Items", true)
-					if it and isResetGuiVisible(it) then break end
-					task.wait(0.05)
-				end
-			end
-
-			it = hud:FindFirstChild("Items", true)
-			if it then
-				clickResetButton(it)
-			end
-		end
-
-		local waitStart = os.clock()
-		while os.clock() - waitStart < 2.5 do
-			_, invInner, main = findInventoryRoots()
-			if isResetGuiVisible(main) then break end
-			task.wait(0.1)
-		end
-	end
-
-	if not main or not isResetGuiVisible(main) then
-		warn("[Reset] Inventory Main panel not visible.")
-		return nil, nil, nil
-	end
-
-	local treasureButton = findTreasureTab(main)
-	if not treasureButton then
-		warn("[Reset] Treasure tab (Category2) not found.")
-		return nil, nil, nil
-	end
-
-	clickResetButton(treasureButton)
-	task.wait(0.5)
-
-	local _, grid = findTileGrid(main)
-	if not grid then
-		warn("[Reset] Treasure Grid not found.")
-		return nil, nil, nil
-	end
-
-	return invInner, main, grid
-end
-
-local function searchResetTreasure(invInner, main, query)
-	local pageContent = main:FindFirstChild("PageContent")
-	local toolbar = pageContent and pageContent:FindFirstChild("ToolBar")
-	local searchField = toolbar and toolbar:FindFirstChild("SearchTextField")
-
-	if searchField then
-		clickResetButton(searchField)
-		task.wait(0.2)
-	end
-
-	local searchBox = findResetTextBox(searchField) or findResetTextBox(toolbar)
-	if not searchBox then
-		for _, obj in ipairs((main or invInner):GetDescendants()) do
-			if obj:IsA("TextBox") and isResetGuiVisible(obj) then
-				searchBox = obj
-				break
-			end
-		end
-	end
-
-	if not searchBox then
-		warn("[Reset] Search TextBox not found.")
-		return false
-	end
-
-	pcall(function()
-		searchBox:CaptureFocus()
-	end)
-	searchBox.Text = ""
-	task.wait(0.05)
-	searchBox.Text = query
-
-	if typeof(getconnections) == "function" then
-		pcall(function()
-			for _, conn in ipairs(getconnections(searchBox:GetPropertyChangedSignal("Text"))) do
-				conn:Fire()
-			end
-		end)
-		pcall(function()
-			for _, conn in ipairs(getconnections(searchBox.FocusLost)) do
-				conn:Fire(true)
-			end
-		end)
-	end
-
-	pcall(function()
-		searchBox:ReleaseFocus(true)
-	end)
-
-	task.wait(0.5)
-	return true
-end
-
-local function getResetTileName(tile)
-	local details = tile:FindFirstChild("Details")
-	if details then
-		local line1 = details:FindFirstChild("Line-1")
-		local line2 = details:FindFirstChild("Line-2")
-
-		local first = (line1 and line1:IsA("TextLabel") and line1.Text) or ""
-		local second = (line2 and line2:IsA("TextLabel") and line2.Text) or ""
-
-		if first ~= "" and second ~= "" then
-			return resetNormalize(first .. " " .. second)
-		end
-		if first ~= "" or second ~= "" then
-			return resetNormalize(first ~= "" and first or second)
-		end
-	end
-
-	for _, lbl in ipairs(tile:GetDescendants()) do
-		if lbl:IsA("TextLabel") then
-			local n = lbl.Name:lower()
-			if n:find("line-1", 1, true) or n:find("title", 1, true) or n:find("name", 1, true) then
-				local txt = resetNormalize(lbl.Text)
-				if txt ~= "" then
-					return txt
-				end
-			end
-		end
-	end
-
-	return ""
-end
-
-local function waitForResetTile(grid, displayName, timeout)
-	local wanted = resetNormalize(displayName)
-	local deadline = os.clock() + (timeout or 2.0)
-
-	while os.clock() < deadline do
-		local fallbackMatch = nil
-
-		for _, tile in ipairs(grid:GetChildren()) do
-			if tile:IsA("GuiObject") then
-				local details = tile:FindFirstChild("Details")
-				local category = details and details:FindFirstChild("Category")
-				local catNorm = (category and category:IsA("TextLabel") and resetNormalize(category.Text)) or ""
-				local tileName = getResetTileName(tile)
-
-				local matched = (tileName == wanted)
-				if not matched then
-					for _, lbl in ipairs(tile:GetDescendants()) do
-						if lbl:IsA("TextLabel") or lbl:IsA("TextButton") then
-							if resetNormalize(lbl.Text) == wanted then
-								matched = true
-								break
-							end
-						end
-					end
-				end
-
-				if matched then
-					if tile.Visible and (catNorm == "" or catNorm:find("fruit", 1, true)) then
-						return tile
-					elseif not fallbackMatch then
-						fallbackMatch = tile
-					end
-				end
-			end
-		end
-
-		if fallbackMatch then
-			return fallbackMatch
-		end
-
-		task.wait(0.1)
-	end
-
-	return nil
-end
-
-local function findEquipButton(rightCard)
-	local itemCard = rightCard:FindFirstChild("ItemCard")
-	local buttons = itemCard and itemCard:FindFirstChild("Buttons")
-	local direct = buttons and buttons:FindFirstChild("Action-EquipFruit")
-	if direct then
-		return direct
-	end
-
-	for _, obj in ipairs(rightCard:GetDescendants()) do
-		if obj:IsA("GuiObject") then
-			local n = obj.Name:lower()
-			if n == "action-equipfruit" or n == "equipfruit" or n == "equipbutton" or n == "equip" then
-				return obj
-			end
-			if obj:IsA("TextButton") or obj:IsA("TextLabel") then
-				local txt = resetNormalize(obj.Text)
-				if txt == "equip" or txt == "equip fruit" then
-					return obj:FindFirstAncestorWhichIsA("GuiButton") or obj
-				end
-			end
-		end
-	end
-
-	return nil
-end
-
-local function equipResetTile(invInner, main, tile, displayName)
-	if not tile then return false end
-
-	clickResetButton(tile)
-	task.wait(0.55)
-
-	local rightCard = (main and main:FindFirstChild("RightCard"))
-		or (invInner and invInner:FindFirstChild("RightCard"))
-		or (main and main:FindFirstChild("RightCard", true))
-
-	if not rightCard then
-		warn("[Reset] RightCard not found.")
-		return false
-	end
-
-	local equipButton = findEquipButton(rightCard)
-	if not equipButton then
-		warn("[Reset] Action-EquipFruit button not found.")
-		return false
-	end
-
-	return clickResetButton(equipButton)
-end
-
-local function resetCharacterAndWait(stepLabel)
-	local oldCharacter = LocalPlayer.Character
-	if not oldCharacter then
-		warn("[Reset] Character not found for:", stepLabel)
-		return false
-	end
-
-	local humanoid = oldCharacter:FindFirstChildOfClass("Humanoid")
+local function resetCharacterWhileSeated()
+	local character = LocalPlayer.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then
-		warn("[Reset] Character cannot be reset for:", stepLabel)
+		warn("[Reset] Character not alive to reset.")
 		return false
 	end
-
-	if humanoid.Sit then
-		humanoid.Sit = false
-	end
-
-	local newCharacter = nil
-	local connection = LocalPlayer.CharacterAdded:Connect(function(character)
-		if character ~= oldCharacter then
-			newCharacter = character
-		end
-	end)
 
 	pcall(function()
 		humanoid.Health = 0
 	end)
-	task.wait(0.3)
+	task.wait(0.25)
 	if humanoid.Health > 0 then
 		pcall(function()
 			humanoid:ChangeState(Enum.HumanoidStateType.Dead)
 		end)
 	end
-
-	local startTime = os.clock()
-	while not newCharacter and os.clock() - startTime < 20 do
-		task.wait(0.1)
-	end
-
-	connection:Disconnect()
-
-	if not newCharacter then
-		warn("[Reset] Respawn timed out on:", stepLabel)
-		return false
-	end
-
-	local wsWait = os.clock()
-	while newCharacter.Parent ~= Workspace and os.clock() - wsWait < 10 do
-		task.wait(0.1)
-	end
-
-	local newHum = newCharacter:WaitForChild("Humanoid", 10)
-	local newHrp = newCharacter:WaitForChild("HumanoidRootPart", 10)
-	if not newHum or not newHrp then
-		warn("[Reset] New character parts missing on:", stepLabel)
-		return false
-	end
-
-	task.wait(1.5)
-	print("[Reset] Respawned & settled:", stepLabel)
 	return true
 end
 
-local function resetFruitItem(rawInput)
+local function resetFruitDirect(rawInput)
 	if isResetting then
-		warn("[Reset] Another reset is already running.")
+		warn("[Reset] Already processing a reset.")
 		return
 	end
 
-	local displayName = resolveDisplayName(rawInput)
-	if not displayName then
+	local candidates = resolveStorageCandidates(rawInput)
+	if not candidates then
 		warn("[Reset] Usage: !reset <fruit name>")
 		return
 	end
 
-	-- Stop sitting completely until both resets finish
 	isResetting = true
-	autoSitEnabled = false
-	_G.TradeAutoSitPaused = true
-	_G.TradeResetLockUntil = os.clock() + 60
 
-	local success, result = pcall(function()
-		-- 1. Reset character first
-		print("[Reset] Starting Reset #1...")
-		if not resetCharacterAndWait("Reset #1") then
-			return false
+	local okRun, errRun = pcall(function()
+		local loadedKey = nil
+		local toolName = nil
+
+		for _, storageKey in ipairs(candidates) do
+			local alreadyHas, existingName = hasFruitInBackpackOrChar(storageKey)
+			if alreadyHas then
+				loadedKey = storageKey
+				toolName = existingName
+				break
+			end
+
+			local okCall, res = pcall(function()
+				return CommF:InvokeServer("LoadFruit", storageKey)
+			end)
+
+			if okCall and res == true then
+				loadedKey = storageKey
+				local t0 = os.clock()
+				while os.clock() - t0 < 1.2 do
+					local found, foundName = hasFruitInBackpackOrChar(storageKey)
+					if found then
+						toolName = foundName
+						break
+					end
+					task.wait(0.05)
+				end
+				break
+			end
 		end
 
-		-- 2. Open Menu -> Items -> Treasure, search, and equip first matching fruit once
-		print("[Reset] Opening Treasure for:", displayName)
-		local invInner, main, grid = openResetTreasure()
-		if not main or not grid then return false end
-
-		if not searchResetTreasure(invInner, main, displayName) then return false end
-
-		local tile = waitForResetTile(grid, displayName, 2.0)
-		if not tile then
-			warn("[Reset] Exact Treasure item not found:", displayName)
-			return false
+		if not loadedKey then
+			warn("[Reset] Fruit not found in storage or LoadFruit failed:", table.concat(candidates, " / "))
+			return
 		end
 
-		print("[Reset] Clicking tile & equipping:", displayName)
-		if not equipResetTile(invInner, main, tile, displayName) then
-			return false
-		end
-
-		task.wait(0.8)
-
-		-- 3. Reset character again after equipping fruit
-		print("[Reset] Equipped. Starting Reset #2...")
-		return resetCharacterAndWait("Reset #2")
+		print("[Reset] Loaded fruit:", loadedKey, "| Tool:", tostring(toolName), "-> Resetting...")
+		task.wait(0.25)
+		resetCharacterWhileSeated()
 	end)
 
-	-- Resume sitting only after Reset #2 completes
-	if success and result then
-		_G.TradeResetLockUntil = os.clock() + 1.0
-	else
-		_G.TradeResetLockUntil = os.clock() + 3.0
+	if not okRun then
+		warn("[Reset] Error:", errRun)
 	end
 
-	_G.TradeAutoSitPaused = false
-	autoSitEnabled = true
-	isResetting = false
-
-	if not success then
-		warn("[Reset] Error:", result)
-	elseif result then
-		print("[Reset] Completed 2-reset flow:", displayName)
-	else
-		warn("[Reset] Failed:", displayName)
-	end
+	task.delay(1.0, function()
+		isResetting = false
+	end)
 end
 
 -- =========================================================
@@ -694,7 +268,7 @@ local function handleChatCommand(rawText)
 		end
 
 		task.spawn(function()
-			resetFruitItem(targetInput)
+			resetFruitDirect(targetInput)
 		end)
 	end
 end
@@ -728,7 +302,7 @@ else
 end
 
 -- =========================================================
--- 5. AUTO-SIT LOOP
+-- 5. CONTINUOUS AUTO-SIT LOOP (NEVER PAUSED BY !reset)
 -- =========================================================
 
 local function TweenToSeat(hrp, targetCFrame, sessionId)
@@ -746,7 +320,7 @@ local function TweenToSeat(hrp, targetCFrame, sessionId)
 	end)
 
 	while not completed do
-		if _G.TradeAddSessionId ~= sessionId or isAutoSitBlocked() then
+		if _G.TradeAddSessionId ~= sessionId then
 			tween:Cancel()
 			conn:Disconnect()
 			return false
@@ -833,13 +407,11 @@ local function IsTableBlocked(tableModel)
 end
 
 task.spawn(function()
-	local lastTable = nil
 	local jumpCooldown = 0
 
 	while _G.TradeAddSessionId == CURRENT_SESSION_ID do
 		task.wait(0.5)
 		if _G.TradeAddSessionId ~= CURRENT_SESSION_ID then break end
-		if isAutoSitBlocked() then continue end
 
 		local character = LocalPlayer.Character
 		if not character or not character:FindFirstChild("HumanoidRootPart") then continue end
@@ -865,7 +437,7 @@ task.spawn(function()
 
 				if unauthorizedFound then
 					task.wait(2)
-					if _G.TradeAddSessionId ~= CURRENT_SESSION_ID or isAutoSitBlocked() then continue end
+					if _G.TradeAddSessionId ~= CURRENT_SESSION_ID then continue end
 					humanoid.Sit = false
 					humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
 					jumpCooldown = tick() + 2
@@ -898,7 +470,7 @@ task.spawn(function()
 				local tweenOk = TweenToSeat(hrp, targetCF, CURRENT_SESSION_ID)
 				if not tweenOk then continue end
 				task.wait(0.2)
-				if _G.TradeAddSessionId ~= CURRENT_SESSION_ID or isAutoSitBlocked() then continue end
+				if _G.TradeAddSessionId ~= CURRENT_SESSION_ID then continue end
 				if bestSeat
 					and bestSeat.Parent
 					and bestSeat.Occupant == nil
@@ -913,4 +485,4 @@ task.spawn(function()
 	end
 end)
 
-print("[Reset] Auto-Sit + !reset <fruit> (2-Reset Flow) loaded!")
+print("[Reset] Direct LoadFruit + Seated Reset + Continuous Auto-Sit loaded!")
