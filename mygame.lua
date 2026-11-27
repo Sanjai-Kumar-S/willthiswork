@@ -133,6 +133,7 @@ end
 
 local function resetNormalize(text)
 	return tostring(text or "")
+		:gsub("<[^>]->", "")
 		:lower()
 		:gsub("%s+", " ")
 		:match("^%s*(.-)%s*$")
@@ -188,31 +189,33 @@ local function clickResetButton(target)
 						fired = true
 					end)
 				end
-				if fired then return true end
 			end
 		end
 	end
 
 	if typeof(firesignal) == "function" then
-		local ok = pcall(function()
+		pcall(function()
 			firesignal(button.Activated)
+			fired = true
 		end)
-		if ok then return true end
 	end
 
-	local inset = GuiService:GetGuiInset()
-	local pos = button.AbsolutePosition
-	local size = button.AbsoluteSize
-	local x = pos.X + (size.X * 0.5)
-	local y = pos.Y + (size.Y * 0.5) + inset.Y
+	if button:IsA("GuiObject") and button.AbsoluteSize.X > 1 and button.AbsoluteSize.Y > 1 then
+		local inset = GuiService:GetGuiInset()
+		local pos = button.AbsolutePosition
+		local size = button.AbsoluteSize
+		local x = pos.X + (size.X * 0.5)
+		local y = pos.Y + (size.Y * 0.5) + inset.Y
 
-	pcall(function()
-		VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
-		task.wait(0.05)
-		VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
-	end)
+		pcall(function()
+			VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+			task.wait(0.05)
+			VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
+			fired = true
+		end)
+	end
 
-	return true
+	return fired
 end
 
 local function findInventoryRoots()
@@ -401,36 +404,51 @@ local function searchResetTreasure(invInner, main, query)
 		searchBox:ReleaseFocus(true)
 	end)
 
-	task.wait(0.35)
+	task.wait(0.5)
 	return true
 end
 
 local function getResetTileName(tile)
 	local details = tile:FindFirstChild("Details")
-	if not details then return "" end
+	if details then
+		local line1 = details:FindFirstChild("Line-1")
+		local line2 = details:FindFirstChild("Line-2")
 
-	local line1 = details:FindFirstChild("Line-1")
-	local line2 = details:FindFirstChild("Line-2")
+		local first = (line1 and line1:IsA("TextLabel") and line1.Text) or ""
+		local second = (line2 and line2:IsA("TextLabel") and line2.Text) or ""
 
-	local first = (line1 and line1:IsA("TextLabel") and line1.Text) or ""
-	local second = (line2 and line2:IsA("TextLabel") and line2.Text) or ""
-
-	if first ~= "" and second ~= "" then
-		return resetNormalize(first .. " " .. second)
+		if first ~= "" and second ~= "" then
+			return resetNormalize(first .. " " .. second)
+		end
+		if first ~= "" or second ~= "" then
+			return resetNormalize(first ~= "" and first or second)
+		end
 	end
 
-	return resetNormalize(first ~= "" and first or second)
+	for _, lbl in ipairs(tile:GetDescendants()) do
+		if lbl:IsA("TextLabel") then
+			local n = lbl.Name:lower()
+			if n:find("line-1", 1, true) or n:find("title", 1, true) or n:find("name", 1, true) then
+				local txt = resetNormalize(lbl.Text)
+				if txt ~= "" then
+					return txt
+				end
+			end
+		end
+	end
+
+	return ""
 end
 
 local function waitForResetTile(grid, displayName, timeout)
 	local wanted = resetNormalize(displayName)
-	local deadline = os.clock() + (timeout or 1.5)
+	local deadline = os.clock() + (timeout or 2.0)
 
 	while os.clock() < deadline do
 		local fallbackMatch = nil
 
 		for _, tile in ipairs(grid:GetChildren()) do
-			if tile:IsA("GuiObject") and tile.Visible then
+			if tile:IsA("GuiObject") then
 				local details = tile:FindFirstChild("Details")
 				local category = details and details:FindFirstChild("Category")
 				local catNorm = (category and category:IsA("TextLabel") and resetNormalize(category.Text)) or ""
@@ -439,7 +457,7 @@ local function waitForResetTile(grid, displayName, timeout)
 				local matched = (tileName == wanted)
 				if not matched then
 					for _, lbl in ipairs(tile:GetDescendants()) do
-						if (lbl:IsA("TextLabel") or lbl:IsA("TextButton")) and lbl.Visible then
+						if lbl:IsA("TextLabel") or lbl:IsA("TextButton") then
 							if resetNormalize(lbl.Text) == wanted then
 								matched = true
 								break
@@ -449,7 +467,7 @@ local function waitForResetTile(grid, displayName, timeout)
 				end
 
 				if matched then
-					if catNorm == "" or catNorm:find("fruit", 1, true) then
+					if tile.Visible and (catNorm == "" or catNorm:find("fruit", 1, true)) then
 						return tile
 					elseif not fallbackMatch then
 						fallbackMatch = tile
@@ -472,12 +490,12 @@ local function findEquipButton(rightCard)
 	local itemCard = rightCard:FindFirstChild("ItemCard")
 	local buttons = itemCard and itemCard:FindFirstChild("Buttons")
 	local direct = buttons and buttons:FindFirstChild("Action-EquipFruit")
-	if direct and isResetGuiVisible(direct) then
+	if direct then
 		return direct
 	end
 
 	for _, obj in ipairs(rightCard:GetDescendants()) do
-		if obj:IsA("GuiObject") and isResetGuiVisible(obj) then
+		if obj:IsA("GuiObject") then
 			local n = obj.Name:lower()
 			if n == "action-equipfruit" or n == "equipfruit" or n == "equipbutton" or n == "equip" then
 				return obj
@@ -498,33 +516,20 @@ local function equipResetTile(invInner, main, tile, displayName)
 	if not tile then return false end
 
 	clickResetButton(tile)
-	task.wait(0.5)
+	task.wait(0.55)
 
 	local rightCard = (main and main:FindFirstChild("RightCard"))
 		or (invInner and invInner:FindFirstChild("RightCard"))
 		or (main and main:FindFirstChild("RightCard", true))
 
-	if not rightCard or not isResetGuiVisible(rightCard) then
-		warn("[Reset] RightCard not visible.")
-		return false
-	end
-
-	local wanted = resetNormalize(displayName)
-	local titleMatched = false
-	for _, lbl in ipairs(rightCard:GetDescendants()) do
-		if lbl:IsA("TextLabel") and isResetGuiVisible(lbl) and resetNormalize(lbl.Text) == wanted then
-			titleMatched = true
-			break
-		end
-	end
-	if not titleMatched then
-		warn("[Reset] RightCard title did not match:", displayName)
+	if not rightCard then
+		warn("[Reset] RightCard not found.")
 		return false
 	end
 
 	local equipButton = findEquipButton(rightCard)
 	if not equipButton then
-		warn("[Reset] Action-EquipFruit button unavailable.")
+		warn("[Reset] Action-EquipFruit button not found.")
 		return false
 	end
 
@@ -626,13 +631,13 @@ local function resetFruitItem(rawInput)
 
 		if not searchResetTreasure(invInner, main, displayName) then return false end
 
-		local tile = waitForResetTile(grid, displayName, 1.5)
+		local tile = waitForResetTile(grid, displayName, 2.0)
 		if not tile then
 			warn("[Reset] Exact Treasure item not found:", displayName)
 			return false
 		end
 
-		print("[Reset] Equipping first matching fruit:", displayName)
+		print("[Reset] Clicking tile & equipping:", displayName)
 		if not equipResetTile(invInner, main, tile, displayName) then
 			return false
 		end
