@@ -401,7 +401,7 @@ local function searchResetTreasure(invInner, main, query)
 		searchBox:ReleaseFocus(true)
 	end)
 
-	task.wait(0.5)
+	task.wait(0.35)
 	return true
 end
 
@@ -422,45 +422,47 @@ local function getResetTileName(tile)
 	return resetNormalize(first ~= "" and first or second)
 end
 
-local function findResetTile(grid, displayName)
+local function waitForResetTile(grid, displayName, timeout)
 	local wanted = resetNormalize(displayName)
+	local deadline = os.clock() + (timeout or 1.5)
 
-	-- First matching tile with Details.Category == "blox fruit"
-	for _, tile in ipairs(grid:GetChildren()) do
-		if (tile:IsA("GuiButton") or tile:IsA("Frame")) and isResetGuiVisible(tile) then
-			local details = tile:FindFirstChild("Details")
-			local category = details and details:FindFirstChild("Category")
-			local categoryName = (category and category:IsA("TextLabel") and category.Text) or ""
-			local tileName = getResetTileName(tile)
+	while os.clock() < deadline do
+		local fallbackMatch = nil
 
-			if resetNormalize(categoryName) == "blox fruit" and tileName == wanted then
-				return tile
-			end
-		end
-	end
+		for _, tile in ipairs(grid:GetChildren()) do
+			if tile:IsA("GuiObject") and tile.Visible then
+				local details = tile:FindFirstChild("Details")
+				local category = details and details:FindFirstChild("Category")
+				local catNorm = (category and category:IsA("TextLabel") and resetNormalize(category.Text)) or ""
+				local tileName = getResetTileName(tile)
 
-	-- Fallback text-blob match
-	for _, tile in ipairs(grid:GetChildren()) do
-		if tile:IsA("GuiObject") and isResetGuiVisible(tile) then
-			local texts = {}
-			local exactLabel = false
-			for _, lbl in ipairs(tile:GetDescendants()) do
-				if lbl:IsA("TextLabel") or lbl:IsA("TextButton") then
-					local norm = resetNormalize(lbl.Text)
-					if norm ~= "" then
-						table.insert(texts, norm)
-						if norm == wanted then
-							exactLabel = true
+				local matched = (tileName == wanted)
+				if not matched then
+					for _, lbl in ipairs(tile:GetDescendants()) do
+						if (lbl:IsA("TextLabel") or lbl:IsA("TextButton")) and lbl.Visible then
+							if resetNormalize(lbl.Text) == wanted then
+								matched = true
+								break
+							end
 						end
 					end
 				end
-			end
 
-			local blob = table.concat(texts, " ")
-			if blob:find("blox fruit", 1, true) and (exactLabel or blob == wanted) then
-				return tile
+				if matched then
+					if catNorm == "" or catNorm:find("fruit", 1, true) then
+						return tile
+					elseif not fallbackMatch then
+						fallbackMatch = tile
+					end
+				end
 			end
 		end
+
+		if fallbackMatch then
+			return fallbackMatch
+		end
+
+		task.wait(0.1)
 	end
 
 	return nil
@@ -624,7 +626,7 @@ local function resetFruitItem(rawInput)
 
 		if not searchResetTreasure(invInner, main, displayName) then return false end
 
-		local tile = findResetTile(grid, displayName)
+		local tile = waitForResetTile(grid, displayName, 1.5)
 		if not tile then
 			warn("[Reset] Exact Treasure item not found:", displayName)
 			return false
