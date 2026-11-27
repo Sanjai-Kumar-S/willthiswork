@@ -20,8 +20,8 @@ sg.Parent = pGui or game:GetService("CoreGui")
 _G._BFModTableGui = sg
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.fromOffset(500, 290)
-frame.Position = UDim2.new(0.5, -250, 0.5, -145)
+frame.Size = UDim2.fromOffset(520, 300)
+frame.Position = UDim2.new(0.5, -260, 0.5, -150)
 frame.BackgroundColor3 = Color3.fromRGB(20, 22, 28)
 frame.BorderSizePixel = 0
 frame.Active = true
@@ -38,7 +38,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -140, 1, 0)
 title.Position = UDim2.fromOffset(10, 0)
 title.BackgroundTransparency = 1
-title.Text = "ModificationFunction Table Probe"
+title.Text = "ModificationService Table Probe"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.TextSize = 14
 title.Font = Enum.Font.SourceSansBold
@@ -75,7 +75,7 @@ scroll.CanvasSize = UDim2.fromOffset(0, 0)
 scroll.Parent = frame
 
 local outBox = Instance.new("TextBox")
-outBox.Size = UDim2.new(1, -12, 0, 220)
+outBox.Size = UDim2.new(1, -12, 0, 230)
 outBox.Position = UDim2.fromOffset(6, 4)
 outBox.BackgroundTransparency = 1
 outBox.Text = ""
@@ -97,7 +97,7 @@ local function logLine(msg)
 	local full = table.concat(logs, "\n")
 	outBox.Text = full
 	local lines = select(2, full:gsub("\n", "\n")) + 1
-	local h = math.max(220, lines * 16 + 16)
+	local h = math.max(230, lines * 16 + 16)
 	outBox.Size = UDim2.new(1, -12, 0, h)
 	scroll.CanvasSize = UDim2.fromOffset(0, h + 8)
 end
