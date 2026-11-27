@@ -4,20 +4,20 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local lp = Players.LocalPlayer
 local pGui = lp and (lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("PlayerGui", 5))
 
-if _G._BFSetEquipGui then
-	pcall(function() _G._BFSetEquipGui:Destroy() end)
-	_G._BFSetEquipGui = nil
+if _G._BFIsEquippedGui then
+	pcall(function() _G._BFIsEquippedGui:Destroy() end)
+	_G._BFIsEquippedGui = nil
 end
 
 local logs = {}
 
 local sg = Instance.new("ScreenGui")
-sg.Name = "BFSetEquipGui"
+sg.Name = "BFIsEquippedGui"
 sg.ResetOnSpawn = false
 sg.IgnoreGuiInset = true
 sg.DisplayOrder = 999999
 sg.Parent = pGui or game:GetService("CoreGui")
-_G._BFSetEquipGui = sg
+_G._BFIsEquippedGui = sg
 
 local frame = Instance.new("Frame")
 frame.Size = UDim2.fromOffset(540, 310)
@@ -38,7 +38,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -140, 1, 0)
 title.Position = UDim2.fromOffset(10, 0)
 title.BackgroundTransparency = 1
-title.Text = "SetEquip Schema Probe (ItemId=539)"
+title.Text = "SetEquip + IsEquipped Probe (ItemId=539)"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.TextSize = 14
 title.Font = Enum.Font.SourceSansBold
@@ -119,7 +119,7 @@ end)
 
 closeBtn.MouseButton1Click:Connect(function()
 	pcall(function() sg:Destroy() end)
-	_G._BFSetEquipGui = nil
+	_G._BFIsEquippedGui = nil
 end)
 
 local function describeTable(t)
@@ -142,29 +142,27 @@ task.spawn(function()
 	end
 
 	local payloads = {
-		{ Type = "SetEquip", ItemId = 539, Equipped = true },
-		{ Type = "SetEquip", ItemId = 539, Equip = true },
-		{ Type = "SetEquip", ItemId = 539, Value = true },
-		{ Type = "SetEquip", ItemId = 539, State = true },
-		{ Type = "SetEquip", StorageKey = "Celebration Bomb", Equipped = true },
-		{ Type = "SetEquip", StorageKey = "Celebration Bomb", Equip = true },
-		{ Type = "SetEquip", ItemId = 539, StorageKey = "Celebration Bomb", Equipped = true },
-		{ Type = "SetEquip", ItemId = 539, Target = "Bomb", Equipped = true },
-		{ Type = "SetEquip", ItemId = 539, Category = "Bomb", Equipped = true },
-		{ Type = "SetEquip", ItemId = 539, Fruit = "Bomb", Equipped = true },
-		{ Type = "SetEquip", SkinId = 539, Equipped = true },
-		{ Type = "SetEquip", Skin = "Celebration Bomb", Equipped = true },
+		{ Type = "SetEquip", IsEquipped = true, ItemId = 539 },
+		{ Type = "SetEquip", IsEquipped = true, Id = 539 },
+		{ Type = "SetEquip", IsEquipped = true, SkinId = 539 },
+		{ Type = "SetEquip", IsEquipped = true, StorageKey = "Celebration Bomb" },
+		{ Type = "SetEquip", IsEquipped = true, Name = "Celebration Bomb" },
+		{ Type = "SetEquip", IsEquipped = true, Skin = "Celebration Bomb" },
+		{ Type = "SetEquip", IsEquipped = true, ItemId = 539, StorageKey = "Celebration Bomb" },
+		{ Type = "SetEquip", IsEquipped = true, ItemId = 539, Fruit = "Bomb" },
+		{ Type = "SetEquip", IsEquipped = true, StorageKey = "Celebration Bomb", Fruit = "Bomb" },
+		{ Type = "SetEquip", IsEquipped = true, ItemId = 539, Target = "Bomb" },
 	}
 
-	logLine("[SetEquipProbe] Testing Type='SetEquip' payloads...")
+	logLine("[IsEquippedProbe] Testing Type='SetEquip' + IsEquipped=true...")
 	for i, tbl in ipairs(payloads) do
 		local ok, r1, r2 = pcall(function()
-			return modFunc:InvokeServer(table.unpack({ tbl }))
+			return modFunc:InvokeServer(tbl)
 		end)
 		logLine(string.format("[#%d] %s -> ok=%s | ret1=%s | ret2=%s",
 			i, describeTable(tbl), tostring(ok), tostring(r1), tostring(r2)))
 		task.wait(0.25)
 	end
 
-	logLine("[SetEquipProbe] Done. Click Copy to grab output.")
+	logLine("[IsEquippedProbe] Done. Click Copy to grab output.")
 end)
