@@ -263,18 +263,23 @@ end
 local function findTileGrid(main)
 	local pageContent = main:FindFirstChild("PageContent")
 	if pageContent then
-		local grid = pageContent:FindFirstChild("TileGrid")
-		if grid then return pageContent, grid end
+		local nestedGrid = pageContent:FindFirstChild("Grid")
+			and pageContent.Grid:FindFirstChild("Content")
+			and pageContent.Grid.Content:FindFirstChild("Grid")
+		if nestedGrid then return pageContent, nestedGrid end
+
+		local tileGrid = pageContent:FindFirstChild("TileGrid")
+		if tileGrid then return pageContent, tileGrid end
 
 		for _, obj in ipairs(pageContent:GetDescendants()) do
-			if (obj:IsA("ScrollingFrame") or obj:IsA("Frame")) and obj.Name:lower():find("grid", 1, true) then
+			if obj.Name == "Grid" and obj:FindFirstChild("Tile") then
 				return pageContent, obj
 			end
 		end
 	end
 
 	for _, obj in ipairs(main:GetDescendants()) do
-		if (obj:IsA("ScrollingFrame") or obj:IsA("Frame")) and obj.Name:lower():find("grid", 1, true) then
+		if obj.Name == "Grid" and obj:FindFirstChild("Tile") then
 			return pageContent or main, obj
 		end
 	end
@@ -303,7 +308,7 @@ local function openResetTreasure()
 			if m and not isResetGuiVisible(it) then
 				clickResetButton(m)
 				local w0 = os.clock()
-				while os.clock() - w0 < 1.0 do
+				while os.clock() - w0 < 1.2 do
 					it = hud:FindFirstChild("Items", true)
 					if it and isResetGuiVisible(it) then break end
 					task.wait(0.05)
@@ -311,7 +316,7 @@ local function openResetTreasure()
 			end
 
 			it = hud:FindFirstChild("Items", true)
-			if it and isResetGuiVisible(it) then
+			if it then
 				clickResetButton(it)
 			end
 		end
@@ -340,7 +345,7 @@ local function openResetTreasure()
 
 	local _, grid = findTileGrid(main)
 	if not grid then
-		warn("[Reset] Treasure TileGrid not found.")
+		warn("[Reset] Treasure Grid not found.")
 		return nil, nil, nil
 	end
 
@@ -420,7 +425,7 @@ end
 local function findResetTile(grid, displayName)
 	local wanted = resetNormalize(displayName)
 
-	-- 1. First matching tile with Details.Category == "blox fruit"
+	-- First matching tile with Details.Category == "blox fruit"
 	for _, tile in ipairs(grid:GetChildren()) do
 		if (tile:IsA("GuiButton") or tile:IsA("Frame")) and isResetGuiVisible(tile) then
 			local details = tile:FindFirstChild("Details")
@@ -434,7 +439,7 @@ local function findResetTile(grid, displayName)
 		end
 	end
 
-	-- 2. Fallback text-blob match
+	-- Fallback text-blob match
 	for _, tile in ipairs(grid:GetChildren()) do
 		if tile:IsA("GuiObject") and isResetGuiVisible(tile) then
 			local texts = {}
@@ -606,13 +611,13 @@ local function resetFruitItem(rawInput)
 	_G.TradeResetLockUntil = os.clock() + 60
 
 	local success, result = pcall(function()
-		-- 1st Reset: leave seat/table cleanly via respawn
+		-- 1. Reset character first
 		print("[Reset] Starting Reset #1...")
 		if not resetCharacterAndWait("Reset #1") then
 			return false
 		end
 
-		-- Open Menu -> Items -> Treasure, search, and equip first matching fruit once
+		-- 2. Open Menu -> Items -> Treasure, search, and equip first matching fruit once
 		print("[Reset] Opening Treasure for:", displayName)
 		local invInner, main, grid = openResetTreasure()
 		if not main or not grid then return false end
@@ -632,7 +637,7 @@ local function resetFruitItem(rawInput)
 
 		task.wait(0.8)
 
-		-- 2nd Reset: reset after equipping fruit
+		-- 3. Reset character again after equipping fruit
 		print("[Reset] Equipped. Starting Reset #2...")
 		return resetCharacterAndWait("Reset #2")
 	end)
