@@ -1,81 +1,60 @@
--- =========================================================
--- FORCE STOP AUTO-SIT (KILLS LOOPS + BLOCKS SEAT WELDING)
--- =========================================================
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CommF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
+local TEST_STORAGE_KEY = "BOMBSKINcelebration"
+local TEST_IDS = { 536, 1027, 539 }
 
--- 1. Kill session IDs & disconnect stored connections
-_G.TradeAddSessionId = (_G.TradeAddSessionId or 0) + 999
-_G.TradeAutoSitPaused = true
-_G.ForceStopAutoSit = true
-_G.AutoSitEnabled = false
+local commFProbes = {
+	{ "LoadFruit", TEST_STORAGE_KEY },
+	{ "EquipSkin", TEST_STORAGE_KEY },
+	{ "EquipItem", TEST_STORAGE_KEY },
+	{ "EquipMutation", TEST_STORAGE_KEY },
+	{ "Inventory", "Equip", TEST_STORAGE_KEY },
+}
 
-if _G.TradeAddConnections then
-	for _, conn in ipairs(_G.TradeAddConnections) do
-		pcall(function() conn:Disconnect() end)
-	end
-	table.clear(_G.TradeAddConnections)
+for _, id in ipairs(TEST_IDS) do
+	table.insert(commFProbes, { "EquipSkin", id })
+	table.insert(commFProbes, { "EquipItem", id })
+	table.insert(commFProbes, { "Inventory", "Equip", id })
 end
 
-if _G._AntiSitConn then
-	pcall(function() _G._AntiSitConn:Disconnect() end)
-	_G._AntiSitConn = nil
-end
+print("[SkinProbe] Testing CommF_ with Celebration Bomb...")
 
--- 2. Unseat immediately and block any loop from re-seating you
-local function forceStand(char)
-	if not char then return end
-	local hum = char:FindFirstChildOfClass("Humanoid")
-	local hrp = char:FindFirstChild("HumanoidRootPart")
-	if not hum then return end
-
-	if hum.SeatPart then
-		local seat = hum.SeatPart
-		hum.Sit = false
-		hum.Jump = true
-		hum:ChangeState(Enum.HumanoidStateType.Jumping)
-
-		for _, d in ipairs(char:GetDescendants()) do
-			if d:IsA("Weld") or d:IsA("WeldConstraint") then
-				if d.Name == "SeatWeld" or d.Part0 == seat or d.Part1 == seat then
-					pcall(function() d:Destroy() end)
-				end
-			end
-		end
-
-		if hrp and seat:IsA("BasePart") then
-			local away = (hrp.Position - seat.Position) * Vector3.new(1, 0, 1)
-			away = (away.Magnitude > 0.1) and away.Unit or Vector3.new(0, 0, 1)
-			hrp.AssemblyLinearVelocity = Vector3.zero
-			char:PivotTo(CFrame.new(seat.Position + away * 8 + Vector3.new(0, 2, 0)))
-		end
-	end
-
-	-- Guard: if any stray loop calls seat:Sit(hum), stand right back up
-	if _G._AntiSitConn then
-		pcall(function() _G._AntiSitConn:Disconnect() end)
-	end
-	_G._AntiSitConn = hum.Seated:Connect(function(active, seat)
-		if active and _G.ForceStopAutoSit then
-			task.defer(function()
-				if hum and hum.Parent then
-					hum.Sit = false
-					hum.Jump = true
-					hum:ChangeState(Enum.HumanoidStateType.Jumping)
-				end
-			end)
-		end
+for i, args in ipairs(commFProbes) do
+	local ok, r1, r2 = pcall(function()
+		return CommF:InvokeServer(table.unpack(args))
 	end)
+	local s = {}
+	for k = 1, #args do s[k] = tostring(args[k]) end
+	print(string.format("[CommF #%d] (%s) -> ok=%s | ret1=%s, ret2=%s", i, table.concat(s, ", "), tostring(ok), tostring(r1), tostring(r2)))
+	task.wait(0.25)
 end
 
-forceStand(LocalPlayer.Character)
+local modFunc = ReplicatedStorage:FindFirstChild("Modules")
+	and ReplicatedStorage.Modules:FindFirstChild("Net")
+	and ReplicatedStorage.Modules.Net:FindFirstChild("RF/ModificationFunction")
 
-LocalPlayer.CharacterAdded:Connect(function(newChar)
-	if _G.ForceStopAutoSit then
-		newChar:WaitForChild("Humanoid", 10)
-		forceStand(newChar)
+if modFunc and modFunc:IsA("RemoteFunction") then
+	local modProbes = {
+		{ "Equip", TEST_STORAGE_KEY },
+		{ "EquipSkin", TEST_STORAGE_KEY },
+		{ TEST_STORAGE_KEY },
+	}
+	for _, id in ipairs(TEST_IDS) do
+		table.insert(modProbes, { "Equip", id })
+		table.insert(modProbes, { id })
 	end
-end)
 
-print("[AutoSit] Force-stopped and anti-sit guard active.")
+	print("[SkinProbe] Testing RF/ModificationFunction with Celebration Bomb...")
+	for i, args in ipairs(modProbes) do
+		local ok, r1, r2 = pcall(function()
+			return modFunc:InvokeServer(table.unpack(args))
+		end)
+		local s = {}
+		for k = 1, #args do s[k] = tostring(args[k]) end
+		print(string.format("[ModRF #%d] (%s) -> ok=%s | ret1=%s, ret2=%s", i, table.concat(s, ", "), tostring(ok), tostring(r1), tostring(r2)))
+		task.wait(0.25)
+	end
+end
+
+print("[SkinProbe] Done.")
