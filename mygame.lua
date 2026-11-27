@@ -9,7 +9,27 @@ local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
-local CommF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
+
+local function getCommF()
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if remotes then
+		local cf = remotes:FindFirstChild("CommF_")
+		if cf then return cf end
+	end
+	local ok, cf = pcall(function()
+		return ReplicatedStorage:WaitForChild("Remotes", 5):WaitForChild("CommF_", 5)
+	end)
+	return ok and cf or nil
+end
+
+local CommF = getCommF()
+print("[Init] CommF_ found:", tostring(CommF ~= nil))
+
+local function getModificationFunction()
+	local mods = ReplicatedStorage:FindFirstChild("Modules")
+	local net = mods and mods:FindFirstChild("Net")
+	return net and net:FindFirstChild("RF/ModificationFunction")
+end
 
 -- =========================================================
 -- 1. CONFIGURATION & SESSION CLEANUP
@@ -120,107 +140,94 @@ local FruitStorageKeys = {
 	["dragon"]      = "Dragon-Dragon",
 }
 
--- Skin / Mutation storage & item keys from registry dump
 local SkinStorageCandidates = {
-	-- Bomb
-	["celebration bomb"]        = { "BOMBSKINcelebration", "Celebration Bomb" },
-	["celebration"]             = { "BOMBSKINcelebration", "Celebration Bomb" },
-	["nuclear bomb"]            = { "BOMBSKINnuclear", "Nuclear Bomb" },
-	["nuclear"]                 = { "BOMBSKINnuclear", "Nuclear Bomb" },
-	["thermite bomb"]           = { "BOMBSKINthermite", "Thermite Bomb" },
-	["thermite"]                = { "BOMBSKINthermite", "Thermite Bomb" },
-	["azura bomb"]              = { "BOMBSKINazura", "Azura Bomb" },
-	["azura"]                   = { "BOMBSKINazura", "Azura Bomb" },
+	["celebration bomb"]         = { "BOMBSKINcelebration", "Celebration Bomb" },
+	["celebration"]              = { "BOMBSKINcelebration", "Celebration Bomb" },
+	["nuclear bomb"]             = { "BOMBSKINnuclear", "Nuclear Bomb" },
+	["nuclear"]                  = { "BOMBSKINnuclear", "Nuclear Bomb" },
+	["thermite bomb"]            = { "BOMBSKINthermite", "Thermite Bomb" },
+	["thermite"]                 = { "BOMBSKINthermite", "Thermite Bomb" },
+	["azura bomb"]               = { "BOMBSKINazura", "Azura Bomb" },
+	["azura"]                    = { "BOMBSKINazura", "Azura Bomb" },
 
-	-- Lightning
-	["purple lightning"]        = { "LIGHTNINGSKINpurple", "Purple Lightning" },
-	["yellow lightning"]        = { "LIGHTNINGSKINyellow", "Yellow Lightning" },
-	["green lightning"]         = { "LIGHTNINGSKINgreen", "Green Lightning" },
-	["red lightning"]           = { "LIGHTNINGSKINred", "Red Lightning" },
-	["blue lightning"]          = { "LIGHTNINGSKINblue" },
+	["purple lightning"]         = { "LIGHTNINGSKINpurple", "Purple Lightning" },
+	["yellow lightning"]         = { "LIGHTNINGSKINyellow", "Yellow Lightning" },
+	["green lightning"]          = { "LIGHTNINGSKINgreen", "Green Lightning" },
+	["red lightning"]            = { "LIGHTNINGSKINred", "Red Lightning" },
+	["blue lightning"]           = { "LIGHTNINGSKINblue" },
 
-	-- Pain
-	["celestial pain"]          = { "PAINSKINcelestial", "Celestial Pain" },
-	["super spirit pain"]       = { "PAINSKINsuperspirit", "Super Spirit Pain" },
-	["super spirit"]            = { "PAINSKINsuperspirit", "Super Spirit Pain" },
-	["sadness pain"]            = { "Sadness Pain" },
-	["torment pain"]            = { "Torment Pain" },
-	["frustration pain"]        = { "Frustration Pain" },
+	["celestial pain"]           = { "PAINSKINcelestial", "Celestial Pain" },
+	["super spirit pain"]        = { "PAINSKINsuperspirit", "Super Spirit Pain" },
+	["super spirit"]             = { "PAINSKINsuperspirit", "Super Spirit Pain" },
+	["sadness pain"]             = { "Sadness Pain" },
+	["torment pain"]             = { "Torment Pain" },
+	["frustration pain"]         = { "Frustration Pain" },
 
-	-- Portal
-	["divine portal"]           = { "PORTALSKINdivine", "Divine Portal" },
-	["pink portal"]             = { "PORTALSKINpink" },
-	["orange portal"]           = { "PORTALSKINorange" },
-	["blue portal"]             = { "PORTALSKINblue" },
+	["divine portal"]            = { "PORTALSKINdivine", "Divine Portal" },
+	["pink portal"]              = { "PORTALSKINpink" },
+	["orange portal"]            = { "PORTALSKINorange" },
+	["blue portal"]              = { "PORTALSKINblue" },
 
-	-- Diamond
-	["emerald diamond"]         = { "DIAMONDSKINgreen", "Emerald Diamond" },
-	["rose quartz diamond"]     = { "DIAMONDSKINpoudretteite", "Rose Quartz Diamond" },
-	["rose quartz"]             = { "DIAMONDSKINpoudretteite", "Rose Quartz Diamond" },
-	["topaz diamond"]           = { "DIAMONDSKINtopaz", "Topaz Diamond" },
-	["ruby diamond"]            = { "DIAMONDSKINred", "Ruby Diamond" },
+	["emerald diamond"]          = { "DIAMONDSKINgreen", "Emerald Diamond" },
+	["rose quartz diamond"]      = { "DIAMONDSKINpoudretteite", "Rose Quartz Diamond" },
+	["rose quartz"]              = { "DIAMONDSKINpoudretteite", "Rose Quartz Diamond" },
+	["topaz diamond"]            = { "DIAMONDSKINtopaz", "Topaz Diamond" },
+	["ruby diamond"]             = { "DIAMONDSKINred", "Ruby Diamond" },
 
-	-- Eagle
-	["glacier eagle"]           = { "FALCSKINglacier", "Glacier Eagle" },
-	["requiem eagle"]           = { "FALCSKINrequiem", "Requiem Eagle" },
-	["matrix eagle"]            = { "FALCSKINmatrix", "Matrix Eagle" },
-	["parrot eagle"]            = { "FALCSKINparrot" },
-	["parrot"]                  = { "FALCSKINparrot" },
+	["glacier eagle"]            = { "FALCSKINglacier", "Glacier Eagle" },
+	["requiem eagle"]            = { "FALCSKINrequiem", "Requiem Eagle" },
+	["matrix eagle"]             = { "FALCSKINmatrix", "Matrix Eagle" },
+	["parrot eagle"]             = { "FALCSKINparrot" },
+	["parrot"]                   = { "FALCSKINparrot" },
 
-	-- Kitsune / Empyrean
-	["crimson kitsune"]         = { "KYUKONSKINcrimson" },
-	["crimson"]                 = { "KYUKONSKINcrimson" },
-	["galaxy kitsune"]          = { "KYUKONSKINgalaxy", "Galaxy Empyrean Kitsune" },
-	["galaxy"]                  = { "KYUKONSKINgalaxy", "Galaxy Empyrean Kitsune" },
-	["empyrean kitsune"]        = { "Empyrean (Kitsune)-Empyrean (Kitsune)" },
-	["empyrean"]                = { "Empyrean (Kitsune)-Empyrean (Kitsune)" },
+	["crimson kitsune"]          = { "KYUKONSKINcrimson" },
+	["crimson"]                  = { "KYUKONSKINcrimson" },
+	["galaxy kitsune"]           = { "KYUKONSKINgalaxy", "Galaxy Empyrean Kitsune" },
+	["galaxy"]                   = { "KYUKONSKINgalaxy", "Galaxy Empyrean Kitsune" },
+	["empyrean kitsune"]         = { "Empyrean (Kitsune)-Empyrean (Kitsune)" },
+	["empyrean"]                 = { "Empyrean (Kitsune)-Empyrean (Kitsune)" },
 
-	-- Tiger
-	["werewolf tiger"]          = { "TIGERSKINwerewolf", "TIGERMUTWerewolf", "Werewolf (Tiger)-Werewolf (Tiger)" },
-	["werewolf"]                = { "TIGERSKINwerewolf", "TIGERMUTWerewolf", "Werewolf (Tiger)-Werewolf (Tiger)" },
+	["werewolf tiger"]           = { "TIGERSKINwerewolf", "TIGERMUTWerewolf", "Werewolf (Tiger)-Werewolf (Tiger)" },
+	["werewolf"]                 = { "TIGERSKINwerewolf", "TIGERMUTWerewolf", "Werewolf (Tiger)-Werewolf (Tiger)" },
 
-	-- Yeti
-	["runic yeti"]              = { "FIENDSKINsealed", "Sealed Fiend" },
-	["runic"]                   = { "FIENDSKINsealed", "Sealed Fiend" },
-	["fiend yeti"]              = { "YETISKINfiend", "YETIMUTFiend", "Fiend (Yeti)-Fiend (Yeti)" },
-	["fiend"]                   = { "YETISKINfiend", "YETIMUTFiend", "Fiend (Yeti)-Fiend (Yeti)" },
+	["runic yeti"]               = { "FIENDSKINsealed", "Sealed Fiend" },
+	["runic"]                    = { "FIENDSKINsealed", "Sealed Fiend" },
+	["fiend yeti"]               = { "YETISKINfiend", "YETIMUTFiend", "Fiend (Yeti)-Fiend (Yeti)" },
+	["fiend"]                    = { "YETISKINfiend", "YETIMUTFiend", "Fiend (Yeti)-Fiend (Yeti)" },
 
-	-- Gas, Magnet, Gravity, Blade
-	["hellfire gas"]            = { "HELLFIRESKINdefault", "GASMUTHellfire", "Hellfire (Gas)-Hellfire (Gas)" },
-	["hellfire"]                = { "HELLFIRESKINdefault", "GASMUTHellfire", "Hellfire (Gas)-Hellfire (Gas)" },
-	["arcsteel magnet"]         = { "MAGNETSKINarksteel", "Arcsteel Magnet" },
-	["arcsteel"]                = { "MAGNETSKINarksteel", "Arcsteel Magnet" },
-	["starlight gravity"]       = { "GRAVITYSKINheavenly", "Heavenly Gravity" },
-	["starlight"]               = { "GRAVITYSKINheavenly", "Heavenly Gravity" },
-	["lime blade"]              = { "BLADESKINlime", "Lime Blade" },
+	["hellfire gas"]             = { "HELLFIRESKINdefault", "GASMUTHellfire", "Hellfire (Gas)-Hellfire (Gas)" },
+	["hellfire"]                 = { "HELLFIRESKINdefault", "GASMUTHellfire", "Hellfire (Gas)-Hellfire (Gas)" },
+	["arcsteel magnet"]          = { "MAGNETSKINarksteel", "Arcsteel Magnet" },
+	["arcsteel"]                 = { "MAGNETSKINarksteel", "Arcsteel Magnet" },
+	["starlight gravity"]        = { "GRAVITYSKINheavenly", "Heavenly Gravity" },
+	["starlight"]                = { "GRAVITYSKINheavenly", "Heavenly Gravity" },
+	["lime blade"]               = { "BLADESKINlime", "Lime Blade" },
 
-	-- Dragon skins & chromatics
-	["west ember dragon"]       = { "WSTDSKINember", "EmberChromaticDragon" },
-	["east ember dragon"]       = { "ESTDSKINember", "EmberChromaticDragon" },
-	["ember dragon"]            = { "EmberChromaticDragon", "WSTDSKINember", "ESTDSKINember" },
-	["ember"]                   = { "EmberChromaticDragon", "WSTDSKINember", "ESTDSKINember" },
-	["west eclipse dragon"]     = { "WSTDSKINeclipse", "EclipseChromaticDragon" },
-	["east eclipse dragon"]     = { "ESTDSKINeclipse", "EclipseChromaticDragon" },
-	["eclipse dragon"]          = { "EclipseChromaticDragon", "WSTDSKINeclipse", "ESTDSKINeclipse" },
-	["eclipse"]                 = { "EclipseChromaticDragon", "WSTDSKINeclipse", "ESTDSKINeclipse" },
-	["west blood moon dragon"]  = { "WSTDSKINbloodmoon", "BloodmoonChromaticDragon" },
-	["east blood moon dragon"]  = { "ESTDSKINbloodmoon", "BloodmoonChromaticDragon" },
-	["blood moon dragon"]       = { "BloodmoonChromaticDragon", "WSTDSKINbloodmoon", "ESTDSKINbloodmoon" },
-	["blood moon"]              = { "BloodmoonChromaticDragon", "WSTDSKINbloodmoon", "ESTDSKINbloodmoon" },
-	["west phoenix sky dragon"] = { "WSTDSKINphoenixsky", "PhoenixSkyChromaticDragon" },
-	["east phoenix sky dragon"] = { "ESTDSKINphoenixsky", "PhoenixSkyChromaticDragon" },
-	["phoenix sky dragon"]      = { "PhoenixSkyChromaticDragon", "WSTDSKINphoenixsky", "ESTDSKINphoenixsky" },
-	["phoenix sky"]             = { "PhoenixSkyChromaticDragon", "WSTDSKINphoenixsky", "ESTDSKINphoenixsky" },
-	["west violet night dragon"]= { "WSTDSKINvioletnight", "VioletNightChromaticDragon" },
-	["east violet night dragon"]= { "ESTDSKINvioletnight", "VioletNightChromaticDragon" },
-	["violet night dragon"]     = { "VioletNightChromaticDragon", "WSTDSKINvioletnight", "ESTDSKINvioletnight" },
-	["violet night"]            = { "VioletNightChromaticDragon", "WSTDSKINvioletnight", "ESTDSKINvioletnight" },
+	["west ember dragon"]        = { "WSTDSKINember", "EmberChromaticDragon" },
+	["east ember dragon"]        = { "ESTDSKINember", "EmberChromaticDragon" },
+	["ember dragon"]             = { "EmberChromaticDragon", "WSTDSKINember", "ESTDSKINember" },
+	["ember"]                    = { "EmberChromaticDragon", "WSTDSKINember", "ESTDSKINember" },
+	["west eclipse dragon"]      = { "WSTDSKINeclipse", "EclipseChromaticDragon" },
+	["east eclipse dragon"]      = { "ESTDSKINeclipse", "EclipseChromaticDragon" },
+	["eclipse dragon"]           = { "EclipseChromaticDragon", "WSTDSKINeclipse", "ESTDSKINeclipse" },
+	["eclipse"]                  = { "EclipseChromaticDragon", "WSTDSKINeclipse", "ESTDSKINeclipse" },
+	["west blood moon dragon"]   = { "WSTDSKINbloodmoon", "BloodmoonChromaticDragon" },
+	["east blood moon dragon"]   = { "ESTDSKINbloodmoon", "BloodmoonChromaticDragon" },
+	["blood moon dragon"]        = { "BloodmoonChromaticDragon", "WSTDSKINbloodmoon", "ESTDSKINbloodmoon" },
+	["blood moon"]               = { "BloodmoonChromaticDragon", "WSTDSKINbloodmoon", "ESTDSKINbloodmoon" },
+	["west phoenix sky dragon"]  = { "WSTDSKINphoenixsky", "PhoenixSkyChromaticDragon" },
+	["east phoenix sky dragon"]  = { "ESTDSKINphoenixsky", "PhoenixSkyChromaticDragon" },
+	["phoenix sky dragon"]       = { "PhoenixSkyChromaticDragon", "WSTDSKINphoenixsky", "ESTDSKINphoenixsky" },
+	["phoenix sky"]              = { "PhoenixSkyChromaticDragon", "WSTDSKINphoenixsky", "ESTDSKINphoenixsky" },
+	["west violet night dragon"] = { "WSTDSKINvioletnight", "VioletNightChromaticDragon" },
+	["east violet night dragon"] = { "ESTDSKINvioletnight", "VioletNightChromaticDragon" },
+	["violet night dragon"]      = { "VioletNightChromaticDragon", "WSTDSKINvioletnight", "ESTDSKINvioletnight" },
+	["violet night"]             = { "VioletNightChromaticDragon", "WSTDSKINvioletnight", "ESTDSKINvioletnight" },
 
-	-- Dog Blade
-	["dog blade"]               = { "BRATSKINdefault", "The Sword Of The Brat" },
-	["rabid dog blade"]         = { "BRATSKINslayer", "The Sword Of The Brat" },
-	["rabid"]                   = { "BRATSKINslayer", "The Sword Of The Brat" },
-}[cite: 2]
+	["dog blade"]                = { "BRATSKINdefault", "The Sword Of The Brat" },
+	["rabid dog blade"]          = { "BRATSKINslayer", "The Sword Of The Brat" },
+	["rabid"]                    = { "BRATSKINslayer", "The Sword Of The Brat" },
+}
 
 local function normalizeName(name)
 	name = tostring(name or ""):lower():gsub("%s+", " "):match("^%s*(.-)%s*$") or ""
@@ -382,6 +389,12 @@ local function equipUnstoreAction(rawInput)
 		jumpOffTableAndStand()
 		task.wait(0.3)
 
+		local cf = CommF or getCommF()
+		if not cf then
+			warn("[Equip] CommF_ not found.")
+			return
+		end
+
 		local loadedTool = nil
 		for _, storageKey in ipairs(candidates) do
 			loadedTool = findMatchingTool(storageKey, rawInput)
@@ -390,7 +403,7 @@ local function equipUnstoreAction(rawInput)
 			end
 
 			local okCall, res = pcall(function()
-				return CommF:InvokeServer("LoadFruit", storageKey)
+				return cf:InvokeServer("LoadFruit", storageKey)
 			end)
 			print(string.format("[Equip] LoadFruit('%s') -> ok=%s | res=%s",
 				storageKey, tostring(okCall), tostring(res)))
