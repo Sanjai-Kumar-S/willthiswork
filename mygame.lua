@@ -1,168 +1,168 @@
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
 
-local lp = Players.LocalPlayer
-local pGui = lp and (lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("PlayerGui", 5))
+local LocalPlayer = Players.LocalPlayer
 
-if _G._BFIsEquippedGui then
-	pcall(function() _G._BFIsEquippedGui:Destroy() end)
-	_G._BFIsEquippedGui = nil
+local SkinEquipIds = {
+	["celebration bomb"] = 536,
+	["celebration"] = 536,
+}
+
+local FruitStorageKeys = {
+	["rocket"] = "Rocket-Rocket",
+	["spin"] = "Spin-Spin",
+	["blade"] = "Blade-Blade",
+	["spring"] = "Spring-Spring",
+	["bomb"] = "Bomb-Bomb",
+	["smoke"] = "Smoke-Smoke",
+	["spike"] = "Spike-Spike",
+	["flame"] = "Flame-Flame",
+	["ice"] = "Ice-Ice",
+	["sand"] = "Sand-Sand",
+	["dark"] = "Dark-Dark",
+	["eagle"] = "Eagle-Eagle",
+	["diamond"] = "Diamond-Diamond",
+	["light"] = "Light-Light",
+	["rubber"] = "Rubber-Rubber",
+	["ghost"] = "Ghost-Ghost",
+	["magma"] = "Magma-Magma",
+	["quake"] = "Quake-Quake",
+	["buddha"] = "Buddha-Buddha",
+	["love"] = "Love-Love",
+	["creation"] = "Creation-Creation",
+	["spider"] = "Spider-Spider",
+	["sound"] = "Sound-Sound",
+	["phoenix"] = "Phoenix-Phoenix",
+	["portal"] = "Portal-Portal",
+	["lightning"] = "Lightning-Lightning",
+	["pain"] = "Pain-Pain",
+	["blizzard"] = "Blizzard-Blizzard",
+	["gravity"] = "Gravity-Gravity",
+	["mammoth"] = "Mammoth-Mammoth",
+	["trex"] = "T-Rex-T-Rex",
+	["t-rex"] = "T-Rex-T-Rex",
+	["dough"] = "Dough-Dough",
+	["shadow"] = "Shadow-Shadow",
+	["venom"] = "Venom-Venom",
+	["gas"] = "Gas-Gas",
+	["spirit"] = "Spirit-Spirit",
+	["tiger"] = "Tiger-Tiger",
+	["leopard"] = "Tiger-Tiger",
+	["leo"] = "Tiger-Tiger",
+	["yeti"] = "Yeti-Yeti",
+	["magnet"] = "Magnet-Magnet",
+	["kitsune"] = "Kitsune-Kitsune",
+	["control"] = "Control-Control",
+	["dragon west"] = "Dragon (West)-Dragon (West)",
+	["west dragon"] = "Dragon (West)-Dragon (West)",
+	["dragon east"] = "Dragon (East)-Dragon (East)",
+	["east dragon"] = "Dragon (East)-Dragon (East)",
+	["dragon"] = "Dragon-Dragon",
+}
+
+local function getModificationFunction()
+	local mods = ReplicatedStorage:FindFirstChild("Modules")
+	local net = mods and mods:FindFirstChild("Net")
+	return net and net:FindFirstChild("RF/ModificationFunction")
 end
 
-local logs = {}
-
-local sg = Instance.new("ScreenGui")
-sg.Name = "BFIsEquippedGui"
-sg.ResetOnSpawn = false
-sg.IgnoreGuiInset = true
-sg.DisplayOrder = 999999
-sg.Parent = pGui or game:GetService("CoreGui")
-_G._BFIsEquippedGui = sg
-
-local frame = Instance.new("Frame")
-frame.Size = UDim2.fromOffset(540, 310)
-frame.Position = UDim2.new(0.5, -270, 0.5, -155)
-frame.BackgroundColor3 = Color3.fromRGB(20, 22, 28)
-frame.BorderSizePixel = 0
-frame.Active = true
-frame.Draggable = true
-frame.Parent = sg
-
-local top = Instance.new("Frame")
-top.Size = UDim2.new(1, 0, 0, 32)
-top.BackgroundColor3 = Color3.fromRGB(30, 33, 42)
-top.BorderSizePixel = 0
-top.Parent = frame
-
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -140, 1, 0)
-title.Position = UDim2.fromOffset(10, 0)
-title.BackgroundTransparency = 1
-title.Text = "SetEquip + IsEquipped Probe (ItemId=539)"
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
-title.TextSize = 14
-title.Font = Enum.Font.SourceSansBold
-title.TextXAlignment = Enum.TextXAlignment.Left
-title.Parent = top
-
-local copyBtn = Instance.new("TextButton")
-copyBtn.Size = UDim2.fromOffset(60, 24)
-copyBtn.Position = UDim2.new(1, -128, 0.5, -12)
-copyBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
-copyBtn.Text = "Copy"
-copyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-copyBtn.TextSize = 13
-copyBtn.Font = Enum.Font.SourceSansBold
-copyBtn.Parent = top
-
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.fromOffset(60, 24)
-closeBtn.Position = UDim2.new(1, -64, 0.5, -12)
-closeBtn.BackgroundColor3 = Color3.fromRGB(190, 45, 55)
-closeBtn.Text = "Close"
-closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeBtn.TextSize = 13
-closeBtn.Font = Enum.Font.SourceSansBold
-closeBtn.Parent = top
-
-local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1, -20, 1, -46)
-scroll.Position = UDim2.fromOffset(10, 38)
-scroll.BackgroundColor3 = Color3.fromRGB(12, 14, 18)
-scroll.BorderSizePixel = 0
-scroll.ScrollBarThickness = 6
-scroll.CanvasSize = UDim2.fromOffset(0, 0)
-scroll.Parent = frame
-
-local outBox = Instance.new("TextBox")
-outBox.Size = UDim2.new(1, -12, 0, 240)
-outBox.Position = UDim2.fromOffset(6, 4)
-outBox.BackgroundTransparency = 1
-outBox.Text = ""
-outBox.TextColor3 = Color3.fromRGB(220, 240, 255)
-outBox.TextSize = 12
-outBox.Font = Enum.Font.Code
-outBox.TextXAlignment = Enum.TextXAlignment.Left
-outBox.TextYAlignment = Enum.TextYAlignment.Top
-outBox.TextWrapped = true
-outBox.MultiLine = true
-outBox.ClearTextOnFocus = false
-outBox.TextEditable = false
-outBox.Parent = scroll
-
-local function logLine(msg)
-	local s = tostring(msg)
-	table.insert(logs, s)
-	pcall(function() print(s) end)
-	local full = table.concat(logs, "\n")
-	outBox.Text = full
-	local lines = select(2, full:gsub("\n", "\n")) + 1
-	local h = math.max(240, lines * 16 + 16)
-	outBox.Size = UDim2.new(1, -12, 0, h)
-	scroll.CanvasSize = UDim2.fromOffset(0, h + 8)
+local function getCommF()
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	return remotes and remotes:FindFirstChild("CommF_")
 end
 
-copyBtn.MouseButton1Click:Connect(function()
-	local txt = table.concat(logs, "\n")
-	local ok = false
-	if typeof(setclipboard) == "function" then
-		ok = pcall(function() setclipboard(txt) end)
-	end
-	if not ok and typeof(toclipboard) == "function" then
-		ok = pcall(function() toclipboard(txt) end)
-	end
-	copyBtn.Text = ok and "Copied!" or "Done"
-	task.delay(1.2, function()
-		if copyBtn and copyBtn.Parent then copyBtn.Text = "Copy" end
-	end)
-end)
-
-closeBtn.MouseButton1Click:Connect(function()
-	pcall(function() sg:Destroy() end)
-	_G._BFIsEquippedGui = nil
-end)
-
-local function describeTable(t)
-	if type(t) ~= "table" then return tostring(t) end
-	local parts = {}
-	for k, v in pairs(t) do
-		table.insert(parts, tostring(k) .. "=" .. tostring(v))
-	end
-	return "{" .. table.concat(parts, ", ") .. "}"
-end
-
-task.spawn(function()
-	local modFunc = ReplicatedStorage:FindFirstChild("Modules")
-		and ReplicatedStorage.Modules:FindFirstChild("Net")
-		and ReplicatedStorage.Modules.Net:FindFirstChild("RF/ModificationFunction")
-
-	if not modFunc then
-		logLine("[Error] RF/ModificationFunction not found.")
-		return
+local function equipToolByName(fruitKey)
+	local char = LocalPlayer and LocalPlayer.Character
+	local backpack = LocalPlayer and LocalPlayer:FindFirstChildOfClass("Backpack")
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	if not hum then
+		return false
 	end
 
-	local payloads = {
-		{ Type = "SetEquip", IsEquipped = true, ItemId = 539 },
-		{ Type = "SetEquip", IsEquipped = true, Id = 539 },
-		{ Type = "SetEquip", IsEquipped = true, SkinId = 539 },
-		{ Type = "SetEquip", IsEquipped = true, StorageKey = "Celebration Bomb" },
-		{ Type = "SetEquip", IsEquipped = true, Name = "Celebration Bomb" },
-		{ Type = "SetEquip", IsEquipped = true, Skin = "Celebration Bomb" },
-		{ Type = "SetEquip", IsEquipped = true, ItemId = 539, StorageKey = "Celebration Bomb" },
-		{ Type = "SetEquip", IsEquipped = true, ItemId = 539, Fruit = "Bomb" },
-		{ Type = "SetEquip", IsEquipped = true, StorageKey = "Celebration Bomb", Fruit = "Bomb" },
-		{ Type = "SetEquip", IsEquipped = true, ItemId = 539, Target = "Bomb" },
-	}
+	local baseName = fruitKey:match("^[^%-]+") or fruitKey
+	local targetNameLower = baseName:lower()
 
-	logLine("[IsEquippedProbe] Testing Type='SetEquip' + IsEquipped=true...")
-	for i, tbl in ipairs(payloads) do
-		local ok, r1, r2 = pcall(function()
-			return modFunc:InvokeServer(tbl)
+	local function findMatchingTool(container)
+		if not container then
+			return nil
+		end
+		for _, item in ipairs(container:GetChildren()) do
+			if item:IsA("Tool") then
+				local n = item.Name:lower()
+				if n == targetNameLower or n:find(targetNameLower, 1, true) then
+					return item
+				end
+			end
+		end
+		return nil
+	end
+
+	local tool = findMatchingTool(char) or findMatchingTool(backpack)
+	if not tool then
+		local deadline = os.clock() + 2.5
+		repeat
+			task.wait(0.1)
+			char = LocalPlayer.Character
+			backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+			hum = char and char:FindFirstChildOfClass("Humanoid")
+			tool = findMatchingTool(char) or findMatchingTool(backpack)
+		until tool or not hum or os.clock() >= deadline
+	end
+
+	if tool and hum then
+		local ok = pcall(function()
+			hum:EquipTool(tool)
 		end)
-		logLine(string.format("[#%d] %s -> ok=%s | ret1=%s | ret2=%s",
-			i, describeTable(tbl), tostring(ok), tostring(r1), tostring(r2)))
-		task.wait(0.25)
+		return ok
 	end
 
-	logLine("[IsEquippedProbe] Done. Click Copy to grab output.")
-end)
+	return false
+end
+
+local function handleEquipCommand(rawArg)
+	if type(rawArg) ~= "string" then
+		return false, "Invalid argument"
+	end
+
+	local query = rawArg:lower():gsub("^%s+", ""):gsub("%s+$", "")
+	if query == "" then
+		return false, "Missing item name"
+	end
+
+	local skinId = SkinEquipIds[query]
+	if skinId then
+		local modFunc = getModificationFunction()
+		if not modFunc then
+			return false, "RF/ModificationFunction not found"
+		end
+		local ok, res = pcall(function()
+			return modFunc:InvokeServer({
+				Type = "SetEquip",
+				IsEquipped = true,
+				ItemId = skinId,
+			})
+		end)
+		return ok, res
+	end
+
+	local storageKey = FruitStorageKeys[query]
+	if not storageKey then
+		local title = query:gsub("(%a)([%w']*)", function(a, b)
+			return a:upper() .. b:lower()
+		end)
+		storageKey = title .. "-" .. title
+	end
+
+	local commF = getCommF()
+	if not commF then
+		return false, "CommF_ not found"
+	end
+
+	local ok, res = pcall(function()
+		return commF:InvokeServer("LoadFruit", storageKey)
+	end)
+	if ok and res ~= false then
+		equipToolByName(storageKey)
+	end
+	return ok, res
+end
