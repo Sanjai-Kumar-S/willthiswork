@@ -1,6 +1,5 @@
 -- =========================================================
--- BLOX FRUITS AUTO-SIT + !reset <fruitname>
--- Seated Reset -> Respawn -> Direct CommF_ LoadFruit -> Auto-Sit
+-- BLOX FRUITS AUTO-SIT + !reset + !equip <fruitname>
 -- =========================================================
 
 local Players = game:GetService("Players")
@@ -16,8 +15,9 @@ local CommF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 -- 1. CONFIGURATION & SESSION CLEANUP
 -- =========================================================
 
-local RESET_PREFIX = "!reset "
-local DUPLICATE_COOLDOWN = 1.0
+local RESET_CMD = "!reset"
+local EQUIP_PREFIX = "!equip "
+local DUPLICATE_COOLDOWN = 0.8
 local AuthorizedUsers = { "BLACKGOKU_0707", "Aid3no" }
 
 local function IsAuthorized(username)
@@ -29,9 +29,10 @@ local function IsAuthorized(username)
 	return false
 end
 
-local isResetting = false
-local lastText = ""
-local lastTime = 0
+local autoSitPaused = false
+local isEquipping = false
+local lastCmdText = ""
+local lastCmdTime = 0
 local lastTable = nil
 
 if _G.TradeAddConnections then
@@ -45,10 +46,9 @@ end
 _G.TradeAddConnections = {}
 _G.TradeAddSessionId = (_G.TradeAddSessionId or 0) + 1
 local CURRENT_SESSION_ID = _G.TradeAddSessionId
-_G.TradeAutoSitPaused = false
 
 local function isAutoSitBlocked()
-	return isResetting or _G.TradeAutoSitPaused
+	return autoSitPaused or isEquipping
 end
 
 -- =========================================================
@@ -145,10 +145,92 @@ local function resolveStorageCandidates(rawInput)
 end
 
 -- =========================================================
--- 3. RESET FIRST -> LOADFRUIT ON RESPAWN
+-- 3. !reset AND !equip ACTIONS
 -- =========================================================
 
-local function hasFruitInBackpackOrChar(storageKey)
+local function resetCharacterAlone()
+	local character = LocalPlayer.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then
+		warn("[Reset] Character not alive.")
+		return false
+	end
+
+	pcall(function()
+		humanoid.Health = 0
+	end)
+	task.wait(0.2)
+	if humanoid.Health > 0 then
+		pcall(function()
+			humanoid:ChangeState(Enum.HumanoidStateType.Dead)
+		end)
+	end
+	return true
+end
+
+local function jumpOffTableAndStand()
+	local character = LocalPlayer.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local hrp = character and character:FindFirstChild("HumanoidRootPart")
+	if not humanoid or not hrp then return false end
+
+	local seatPart = humanoid.SeatPart
+	local awayDir = nil
+	local originPos = hrp.Position
+
+	if seatPart and seatPart:IsA("BasePart") then
+		originPos = seatPart.Position
+		lastTable = seatPart.Parent
+
+		local tableModel = seatPart.Parent
+		if tableModel and tableModel:IsA("Model") then
+			local pivotPos = tableModel:GetPivot().Position
+			local flatDir = Vector3.new(seatPart.Position.X - pivotPos.X, 0, seatPart.Position.Z - pivotPos.Z)
+			if flatDir.Magnitude > 0.05 then
+				awayDir = flatDir.Unit
+			end
+		end
+		if not awayDir then
+			local look = seatPart.CFrame.LookVector
+			awayDir = Vector3.new(look.X, 0, look.Z)
+			awayDir = (awayDir.Magnitude > 0.05) and awayDir.Unit or Vector3.new(0, 0, 1)
+		end
+	end
+
+	humanoid.Sit = false
+	humanoid.Jump = true
+	humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+
+	for _, d in ipairs(character:GetDescendants()) do
+		if d:IsA("Weld") or d:IsA("WeldConstraint") then
+			if d.Name == "SeatWeld" or (seatPart and (d.Part0 == seatPart or d.Part1 == seatPart)) then
+				pcall(function()
+					d:Destroy()
+				end)
+			end
+		end
+	end
+
+	local t0 = os.clock()
+	while humanoid.SeatPart ~= nil and os.clock() - t0 < 0.8 do
+		humanoid.Sit = false
+		task.wait(0.05)
+	end
+
+	if awayDir then
+		local standPos = originPos + (awayDir * 8) + Vector3.new(0, 2, 0)
+		hrp.AssemblyLinearVelocity = Vector3.zero
+		hrp.AssemblyAngularVelocity = Vector3.zero
+		character:PivotTo(CFrame.new(standPos, standPos + awayDir))
+		task.wait(0.25)
+	end
+
+	humanoid.Sit = false
+	humanoid:ChangeState(Enum.HumanoidStateType.Running)
+	return true
+end
+
+local function findFruitTool(storageKey)
 	local baseName = storageKey:match("^(.-)%-") or storageKey
 	local target = baseName:lower()
 
@@ -156,91 +238,38 @@ local function hasFruitInBackpackOrChar(storageKey)
 		if container then
 			for _, item in ipairs(container:GetChildren()) do
 				if item:IsA("Tool") and item.Name:lower():find(target, 1, true) then
-					return true, item.Name
+					return item
 				end
 			end
 		end
 	end
-	return false, nil
+	return nil
 end
 
-local function resetAndWaitForRespawn()
-	local oldCharacter = LocalPlayer.Character
-	local humanoid = oldCharacter and oldCharacter:FindFirstChildOfClass("Humanoid")
-	if not humanoid or humanoid.Health <= 0 then
-		warn("[Reset] Character not alive to reset.")
-		return false
-	end
-
-	local newCharacter = nil
-	local conn = LocalPlayer.CharacterAdded:Connect(function(char)
-		if char ~= oldCharacter then
-			newCharacter = char
-		end
-	end)
-
-	pcall(function()
-		humanoid.Health = 0
-	end)
-	task.wait(0.25)
-	if humanoid.Health > 0 then
-		pcall(function()
-			humanoid:ChangeState(Enum.HumanoidStateType.Dead)
-		end)
-	end
-
-	local t0 = os.clock()
-	while not newCharacter and os.clock() - t0 < 20 do
-		task.wait(0.1)
-	end
-	conn:Disconnect()
-
-	if not newCharacter then
-		warn("[Reset] Respawn timed out.")
-		return false
-	end
-
-	local wsWait = os.clock()
-	while newCharacter.Parent ~= Workspace and os.clock() - wsWait < 10 do
-		task.wait(0.1)
-	end
-
-	newCharacter:WaitForChild("Humanoid", 10)
-	newCharacter:WaitForChild("HumanoidRootPart", 10)
-	LocalPlayer:WaitForChild("Backpack", 10)
-	task.wait(0.8)
-	return true
-end
-
-local function resetFruitFlow(rawInput)
-	if isResetting then
-		warn("[Reset] Already running a reset.")
+local function equipFruitAction(rawInput)
+	if isEquipping then
+		warn("[Equip] Already equipping a fruit.")
 		return
 	end
 
 	local candidates = resolveStorageCandidates(rawInput)
 	if not candidates then
-		warn("[Reset] Usage: !reset <fruit name>")
+		warn("[Equip] Usage: !equip <fruit name>")
 		return
 	end
 
-	isResetting = true
-	_G.TradeAutoSitPaused = true
+	isEquipping = true
+	autoSitPaused = true
 
-	local okRun, errRun = pcall(function()
-		print("[Reset] Resetting out of trade seat...")
-		if not resetAndWaitForRespawn() then
-			return
-		end
+	local ok, err = pcall(function()
+		print("[Equip] Jumping off trade table & stopping auto-sit...")
+		jumpOffTableAndStand()
+		task.wait(0.3)
 
-		local loadedKey = nil
-		local toolName = nil
-
+		local equippedTool = nil
 		for _, storageKey in ipairs(candidates) do
-			local alreadyHas, existingName = hasFruitInBackpackOrChar(storageKey)
-			if alreadyHas then
-				loadedKey = storageKey
-				toolName = existingName
+			equippedTool = findFruitTool(storageKey)
+			if equippedTool then
 				break
 			end
 
@@ -249,37 +278,54 @@ local function resetFruitFlow(rawInput)
 			end)
 
 			if okCall and res == true then
-				loadedKey = storageKey
-				local w0 = os.clock()
-				while os.clock() - w0 < 1.2 do
-					local found, foundName = hasFruitInBackpackOrChar(storageKey)
-					if found then
-						toolName = foundName
+				local deadline = os.clock() + 1.5
+				while os.clock() < deadline do
+					equippedTool = findFruitTool(storageKey)
+					if equippedTool then
 						break
 					end
 					task.wait(0.05)
 				end
-				break
+				if equippedTool then
+					break
+				end
 			end
 		end
 
-		if loadedKey then
-			print("[Reset] Unstored:", loadedKey, "| Backpack tool:", tostring(toolName))
+		if equippedTool then
+			local character = LocalPlayer.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			if humanoid and equippedTool.Parent == LocalPlayer:FindFirstChild("Backpack") then
+				pcall(function()
+					humanoid:EquipTool(equippedTool)
+				end)
+			end
+			print("[Equip] Fruit ready & equipped:", equippedTool.Name)
 		else
-			warn("[Reset] Could not unstore:", table.concat(candidates, " / "))
+			warn("[Equip] Could not load/equip:", table.concat(candidates, " / "))
 		end
 	end)
 
-	if not okRun then
-		warn("[Reset] Error:", errRun)
+	if not ok then
+		warn("[Equip] Error:", err)
 	end
 
-	_G.TradeAutoSitPaused = false
-	isResetting = false
+	-- Re-enable auto-sit and standing state only after equip finishes
+	local character = LocalPlayer.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		pcall(function()
+			humanoid:ChangeState(Enum.HumanoidStateType.Running)
+		end)
+	end
+
+	isEquipping = false
+	autoSitPaused = false
+	print("[Equip] Auto-sit re-enabled.")
 end
 
 -- =========================================================
--- 4. CHAT COMMAND LISTENER
+-- 4. CHAT COMMAND LISTENER (!reset & !equip <fruitname>)
 -- =========================================================
 
 local function handleChatCommand(rawText)
@@ -288,22 +334,28 @@ local function handleChatCommand(rawText)
 	local cleanText = rawText:match("^%s*(.-)%s*$")
 	local lowerText = cleanText:lower()
 
-	if lowerText:sub(1, #RESET_PREFIX) == RESET_PREFIX then
-		local now = os.clock()
-		if lowerText == lastText and (now - lastTime) < DUPLICATE_COOLDOWN then
-			return
-		end
-		lastText = lowerText
-		lastTime = now
+	local now = os.clock()
+	if lowerText == lastCmdText and (now - lastCmdTime) < DUPLICATE_COOLDOWN then
+		return
+	end
 
-		local targetInput = cleanText:sub(#RESET_PREFIX + 1):match("^%s*(.-)%s*$")
+	if lowerText == RESET_CMD then
+		lastCmdText = lowerText
+		lastCmdTime = now
+		task.spawn(resetCharacterAlone)
+		return
+	end
+
+	if lowerText:sub(1, #EQUIP_PREFIX) == EQUIP_PREFIX then
+		lastCmdText = lowerText
+		lastCmdTime = now
+		local targetInput = cleanText:sub(#EQUIP_PREFIX + 1):match("^%s*(.-)%s*$")
 		if targetInput == "" then
-			warn("[Reset] Usage: !reset <fruit name>")
+			warn("[Equip] Usage: !equip <fruit name>")
 			return
 		end
-
 		task.spawn(function()
-			resetFruitFlow(targetInput)
+			equipFruitAction(targetInput)
 		end)
 	end
 end
@@ -337,7 +389,7 @@ else
 end
 
 -- =========================================================
--- 5. AUTO-SIT LOOP (PAUSES ONLY DURING RESPAWN + LOADFRUIT)
+-- 5. AUTO-SIT LOOP
 -- =========================================================
 
 local function TweenToSeat(hrp, targetCFrame, sessionId)
@@ -521,4 +573,4 @@ task.spawn(function()
 	end
 end)
 
-print("[Reset] 1-Reset + Direct LoadFruit + Auto-Sit loaded!")
+print("[Ready] Auto-Sit + !reset + !equip <fruit> loaded!")
