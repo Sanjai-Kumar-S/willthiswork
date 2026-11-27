@@ -1,6 +1,6 @@
 -- =========================================================
 -- BLOX FRUITS AUTO-SIT + !reset <fruitname>
--- Hard Reset Lock + Single-Trigger Click + Relaxed UI Lookup
+-- Full UI Path + Fallbacks + Hard Reset Lock
 -- =========================================================
 
 local Players = game:GetService("Players")
@@ -150,7 +150,7 @@ local function resolveDisplayName(rawInput)
 end
 
 -- =========================================================
--- 3. EXACT UI & RESET HELPERS
+-- 3. UI & RESET HELPERS
 -- =========================================================
 
 local function isResetGuiVisible(gui)
@@ -169,10 +169,12 @@ end
 
 local function clickResetButton(target)
 	if not target or not target:IsA("GuiObject") then return false end
+
 	local button = target
 	if not button:IsA("GuiButton") then
 		button = target:FindFirstAncestorWhichIsA("GuiButton") or target:FindFirstChildWhichIsA("GuiButton", true) or target
 	end
+
 	local fired = false
 	if typeof(getconnections) == "function" then
 		for _, sigName in ipairs({ "Activated", "MouseButton1Click" }) do
@@ -190,23 +192,95 @@ local function clickResetButton(target)
 			end
 		end
 	end
+
 	if typeof(firesignal) == "function" then
 		local ok = pcall(function()
 			firesignal(button.Activated)
 		end)
 		if ok then return true end
 	end
+
 	local inset = GuiService:GetGuiInset()
 	local pos = button.AbsolutePosition
 	local size = button.AbsoluteSize
 	local x = pos.X + (size.X * 0.5)
 	local y = pos.Y + (size.Y * 0.5) + inset.Y
+
 	pcall(function()
 		VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
 		task.wait(0.05)
 		VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
 	end)
+
 	return true
+end
+
+local function findInventoryRoots()
+	local invGui = PlayerGui:FindFirstChild("Inventory")
+	local invInner = invGui and invGui:FindFirstChild("Inventory")
+	local main = invInner and invInner:FindFirstChild("Main")
+
+	if main then
+		return invGui, invInner, main
+	end
+
+	-- Fallback scan across ScreenGuis containing "inv" in their name
+	for _, gui in ipairs(PlayerGui:GetChildren()) do
+		if gui:IsA("ScreenGui") and gui.Name:lower():find("inv", 1, true) then
+			local inner = gui:FindFirstChild("Inventory") or gui
+			local m = inner:FindFirstChild("Main") or gui:FindFirstChild("Main", true)
+			if m then
+				return gui, m.Parent, m
+			end
+		end
+	end
+
+	return invGui, invInner, main
+end
+
+local function findTreasureTab(main)
+	local nav = main:FindFirstChild("NavigationRail")
+	if nav then
+		local cat2 = nav:FindFirstChild("Category2")
+		if cat2 then return cat2 end
+	end
+
+	local searchRoot = nav or main
+	for _, obj in ipairs(searchRoot:GetDescendants()) do
+		if obj:IsA("GuiObject") then
+			local n = obj.Name:lower()
+			if n:find("category2", 1, true) or n:find("treas", 1, true) then
+				return obj
+			end
+			if (obj:IsA("TextLabel") or obj:IsA("TextButton")) and obj.Text:lower():find("treas", 1, true) then
+				return obj:FindFirstAncestorWhichIsA("GuiButton") or obj
+			end
+		end
+	end
+
+	return nil
+end
+
+local function findTileGrid(main)
+	local pageContent = main:FindFirstChild("PageContent")
+	if pageContent then
+		local grid = pageContent:FindFirstChild("TileGrid")
+		if grid then return pageContent, grid end
+
+		for _, obj in ipairs(pageContent:GetDescendants()) do
+			if (obj:IsA("ScrollingFrame") or obj:IsA("Frame")) and obj.Name:lower():find("grid", 1, true) then
+				return pageContent, obj
+			end
+		end
+	end
+
+	for _, obj in ipairs(main:GetDescendants()) do
+		if (obj:IsA("ScrollingFrame") or obj:IsA("Frame")) and obj.Name:lower():find("grid", 1, true) then
+			return pageContent or main, obj
+		end
+	end
+
+	return pageContent, nil
 end
 
 local function findResetTextBox(parent)
@@ -247,6 +321,18 @@ local function stepOffTradeTableAndMoveAway()
 		humanoid.Jump = true
 		humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
 
+		-- Clear any SeatWeld / seat welds
+		for _, desc in ipairs(character:GetDescendants()) do
+			if (desc:IsA("Weld") or desc:IsA("WeldConstraint") or desc:IsA("Motor6D")) and desc.Name == "SeatWeld" then
+				pcall(function() desc:Destroy() end)
+			end
+		end
+		for _, child in ipairs(seatPart:GetChildren()) do
+			if (child:IsA("Weld") or child:IsA("WeldConstraint")) and child.Name == "SeatWeld" then
+				pcall(function() child:Destroy() end)
+			end
+		end
+
 		local t0 = os.clock()
 		while humanoid.SeatPart ~= nil and os.clock() - t0 < 0.8 do
 			task.wait(0.05)
@@ -254,7 +340,7 @@ local function stepOffTradeTableAndMoveAway()
 
 		local targetPos = seatPart.Position + awayDir * 10 + Vector3.new(0, 2, 0)
 		hrp.AssemblyLinearVelocity = Vector3.zero
-		hrp.CFrame = CFrame.new(targetPos, targetPos + awayDir)
+		character:PivotTo(CFrame.new(targetPos, targetPos + awayDir))
 		task.wait(0.35)
 	elseif humanoid.Sit then
 		humanoid.Sit = false
@@ -265,9 +351,7 @@ local function stepOffTradeTableAndMoveAway()
 end
 
 local function openResetTreasure()
-	local invGui = PlayerGui:FindFirstChild("Inventory")
-	local invInner = invGui and invGui:FindFirstChild("Inventory")
-	local main = invInner and invInner:FindFirstChild("Main")
+	local _, invInner, main = findInventoryRoots()
 
 	if not isResetGuiVisible(main) then
 		local hud = PlayerGui:FindFirstChild("HUDRoot")
@@ -278,7 +362,7 @@ local function openResetTreasure()
 			if m and not isResetGuiVisible(it) then
 				clickResetButton(m)
 				local w0 = os.clock()
-				while os.clock() - w0 < 1.2 do
+				while os.clock() - w0 < 1.0 do
 					it = hud:FindFirstChild("Items", true)
 					if it and isResetGuiVisible(it) then break end
 					task.wait(0.05)
@@ -286,92 +370,62 @@ local function openResetTreasure()
 			end
 
 			it = hud:FindFirstChild("Items", true)
-			if it then
+			if it and isResetGuiVisible(it) then
 				clickResetButton(it)
 			end
 		end
 
 		local waitStart = os.clock()
-		while os.clock() - waitStart < 2.5 do
-			invGui = PlayerGui:FindFirstChild("Inventory")
-			invInner = invGui and invGui:FindFirstChild("Inventory")
-			main = invInner and invInner:FindFirstChild("Main")
-			if main then break end
+		while os.clock() - waitStart < 2.0 do
+			_, invInner, main = findInventoryRoots()
+			if isResetGuiVisible(main) then break end
 			task.wait(0.1)
 		end
 	end
 
-	-- Fallback: locate any visible Inventory-like container with a Main or Frame
-	if not main then
-		for _, gui in ipairs(PlayerGui:GetChildren()) do
-			if gui:IsA("ScreenGui") and gui.Enabled and gui.Name:lower():find("inv", 1, true) then
-				main = gui:FindFirstChild("Main", true) or gui:FindFirstChildWhichIsA("Frame", true)
-				if main then
-					invInner = main.Parent
-					break
-				end
-			end
-		end
+	if not main or not isResetGuiVisible(main) then
+		warn("[Reset] Inventory Main panel not visible.")
+		return nil, nil, nil
 	end
 
-	if not main then
-		warn("[Reset] Inventory Main container not found.")
-		return nil, nil
-	end
-
-	-- Select Treasure tab (Category2 or matching name/text)
-	local nav = main:FindFirstChild("NavigationRail", true)
-	local treasureButton = nav and nav:FindFirstChild("Category2", true)
+	local treasureButton = findTreasureTab(main)
 	if not treasureButton then
-		for _, d in ipairs(main:GetDescendants()) do
-			if d.Name:lower():find("category2", 1, true)
-				or d.Name:lower():find("treas", 1, true)
-				or ((d:IsA("TextLabel") or d:IsA("TextButton")) and d.Text:lower():find("treas", 1, true)) then
-				treasureButton = d
-				break
-			end
-		end
+		warn("[Reset] Treasure tab (Category2) not found.")
+		return nil, nil, nil
 	end
 
-	if treasureButton then
-		clickResetButton(treasureButton)
-		task.wait(0.5)
-	else
-		warn("[Reset] Treasure tab button not found; continuing with current grid.")
-	end
+	clickResetButton(treasureButton)
+	task.wait(0.5)
 
-	local grid = main:FindFirstChild("TileGrid", true)
+	local _, grid = findTileGrid(main)
 	if not grid then
-		for _, d in ipairs(main:GetDescendants()) do
-			if d.Name:lower():find("grid", 1, true) and (d:IsA("ScrollingFrame") or d:IsA("Frame")) then
-				grid = d
-				break
-			end
-		end
+		warn("[Reset] Treasure TileGrid not found.")
+		return nil, nil, nil
 	end
 
-	if not grid then
-		warn("[Reset] Grid not found inside Inventory.")
-		return nil, nil
-	end
-
-	return invInner or main.Parent, grid
+	return invInner, main, grid
 end
 
-local function searchResetTreasure(invInner, query)
-	local main = invInner and invInner:FindFirstChild("Main")
-	local pageContent = main and main:FindFirstChild("PageContent")
+local function searchResetTreasure(invInner, main, query)
+	local pageContent = main:FindFirstChild("PageContent")
 	local toolbar = pageContent and pageContent:FindFirstChild("ToolBar")
 	local searchField = toolbar and toolbar:FindFirstChild("SearchTextField")
-	if not searchField then
-		warn("[Reset] SearchTextField not found.")
-		return false
+
+	if searchField then
+		clickResetButton(searchField)
+		task.wait(0.2)
 	end
 
-	clickResetButton(searchField)
-	task.wait(0.2)
-
 	local searchBox = findResetTextBox(searchField) or findResetTextBox(toolbar)
+	if not searchBox then
+		for _, obj in ipairs((main or invInner):GetDescendants()) do
+			if obj:IsA("TextBox") and isResetGuiVisible(obj) then
+				searchBox = obj
+				break
+			end
+		end
+	end
+
 	if not searchBox then
 		warn("[Reset] Search TextBox not found.")
 		return false
@@ -425,8 +479,9 @@ end
 local function findResetTile(grid, displayName)
 	local wanted = resetNormalize(displayName)
 
+	-- 1. Primary exact match on Details.Category == "blox fruit" + Line-1/Line-2
 	for _, tile in ipairs(grid:GetChildren()) do
-		if tile:IsA("GuiButton") and isResetGuiVisible(tile) then
+		if (tile:IsA("GuiButton") or tile:IsA("Frame")) and isResetGuiVisible(tile) then
 			local details = tile:FindFirstChild("Details")
 			local category = details and details:FindFirstChild("Category")
 			local categoryName = (category and category:IsA("TextLabel") and category.Text) or ""
@@ -438,16 +493,70 @@ local function findResetTile(grid, displayName)
 		end
 	end
 
+	-- 2. Fallback text-blob matching across descendant TextLabels and TextButtons
+	for _, tile in ipairs(grid:GetChildren()) do
+		if tile:IsA("GuiObject") and isResetGuiVisible(tile) then
+			local texts = {}
+			local exactLabel = false
+			for _, lbl in ipairs(tile:GetDescendants()) do
+				if lbl:IsA("TextLabel") or lbl:IsA("TextButton") then
+					local norm = resetNormalize(lbl.Text)
+					if norm ~= "" then
+						table.insert(texts, norm)
+						if norm == wanted then
+							exactLabel = true
+						end
+					end
+				end
+			end
+
+			local blob = table.concat(texts, " ")
+			if blob:find("blox fruit", 1, true) and (exactLabel or blob == wanted) then
+				return tile
+			end
+		end
+	end
+
 	return nil
 end
 
-local function equipResetTile(invInner, tile, displayName)
+local function findEquipButton(rightCard)
+	local itemCard = rightCard:FindFirstChild("ItemCard")
+	local buttons = itemCard and itemCard:FindFirstChild("Buttons")
+	local direct = buttons and buttons:FindFirstChild("Action-EquipFruit")
+	if direct and isResetGuiVisible(direct) then
+		return direct
+	end
+
+	for _, obj in ipairs(rightCard:GetDescendants()) do
+		if obj:IsA("GuiObject") and isResetGuiVisible(obj) then
+			local n = obj.Name:lower()
+			if n == "action-equipfruit" or n == "equipfruit" or n == "equipbutton" or n == "equip" then
+				return obj
+			end
+			if obj:IsA("TextButton") or obj:IsA("TextLabel") then
+				local txt = resetNormalize(obj.Text)
+				if txt == "equip" or txt == "equip fruit" then
+					return obj:FindFirstAncestorWhichIsA("GuiButton") or obj
+				end
+			end
+		end
+	end
+
+	return nil
+end
+
+local function equipResetTile(invInner, main, tile, displayName)
 	if not tile then return false end
 
 	clickResetButton(tile)
 	task.wait(0.5)
 
-	local rightCard = invInner and invInner:FindFirstChild("RightCard")
+	-- Primary path: Inventory.Inventory.Main.RightCard
+	local rightCard = (main and main:FindFirstChild("RightCard"))
+		or (invInner and invInner:FindFirstChild("RightCard"))
+		or (main and main:FindFirstChild("RightCard", true))
+
 	if not rightCard or not isResetGuiVisible(rightCard) then
 		warn("[Reset] RightCard not visible.")
 		return false
@@ -466,11 +575,8 @@ local function equipResetTile(invInner, tile, displayName)
 		return false
 	end
 
-	local itemCard = rightCard:FindFirstChild("ItemCard")
-	local buttons = itemCard and itemCard:FindFirstChild("Buttons")
-	local equipButton = buttons and buttons:FindFirstChild("Action-EquipFruit")
-
-	if not equipButton or not isResetGuiVisible(equipButton) then
+	local equipButton = findEquipButton(rightCard)
+	if not equipButton then
 		warn("[Reset] Action-EquipFruit button unavailable.")
 		return false
 	end
@@ -558,10 +664,10 @@ local function resetFruitItem(rawInput)
 		stepOffTradeTableAndMoveAway()
 		print("[Reset] Opening Treasure for:", displayName)
 
-		local invInner, grid = openResetTreasure()
-		if not invInner or not grid then return false end
+		local invInner, main, grid = openResetTreasure()
+		if not main or not grid then return false end
 
-		if not searchResetTreasure(invInner, displayName) then return false end
+		if not searchResetTreasure(invInner, main, displayName) then return false end
 
 		local tile = findResetTile(grid, displayName)
 		if not tile then
@@ -570,7 +676,7 @@ local function resetFruitItem(rawInput)
 		end
 
 		print("[Reset] Equipping:", displayName)
-		if not equipResetTile(invInner, tile, displayName) then
+		if not equipResetTile(invInner, main, tile, displayName) then
 			return false
 		end
 
@@ -582,7 +688,7 @@ local function resetFruitItem(rawInput)
 	if success and result then
 		_G.TradeResetLockUntil = os.clock() + 1.0
 	else
-		_G.TradeResetLockUntil = os.clock() + 8.0
+		_G.TradeResetLockUntil = os.clock() + 3.0
 	end
 
 	_G.TradeAutoSitPaused = false
