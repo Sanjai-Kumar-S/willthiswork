@@ -1,7 +1,7 @@
 -- =========================================================
 -- BLOX FRUITS TRADE ADDER - VERSION 5 (FULL REGISTRY)
 -- Multi-ID + StorageKey Fallback Resolver
--- Uses Version 4 Remote and Inventory Modules
+-- Non-Blocking Module Loader + Nil-Safe Inventory Guards
 -- =========================================================
 
 local Players = game:GetService("Players")
@@ -9,27 +9,41 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextChatService = game:GetService("TextChatService")
 local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-local GuiService = game:GetService("GuiService")
 
 local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 local TradeFunction = ReplicatedStorage
 	:WaitForChild("Remotes")
 	:WaitForChild("TradeFunction")
 
-local ItemReplicationService = require(
-	ReplicatedStorage:WaitForChild("ItemReplicationService")
-)
+local ItemReplicationService = nil
+local KEYS = nil
+local ItemConfig = nil
 
-local KEYS = require(
-	ReplicatedStorage.ItemReplicationService:WaitForChild("KEYS")
-)
+task.spawn(function()
+	local repMod = ReplicatedStorage:FindFirstChild("ItemReplicationService")
+	if repMod and repMod:IsA("ModuleScript") then
+		local ok, mod = pcall(require, repMod)
+		if ok then
+			ItemReplicationService = mod
+			local keysMod = repMod:FindFirstChild("KEYS")
+			if keysMod and keysMod:IsA("ModuleScript") then
+				local kOk, kMod = pcall(require, keysMod)
+				if kOk then
+					KEYS = kMod
+				end
+			end
+		end
+	end
 
-local ItemConfig = require(
-	ReplicatedStorage:WaitForChild("ItemConfig")
-)
+	local cfgMod = ReplicatedStorage:FindFirstChild("ItemConfig")
+	if cfgMod and cfgMod:IsA("ModuleScript") then
+		local cOk, cMod = pcall(require, cfgMod)
+		if cOk then
+			ItemConfig = cMod
+		end
+	end
+end)
 
 -- =========================================================
 -- 1. CONFIGURATION
@@ -37,7 +51,6 @@ local ItemConfig = require(
 
 local COMMAND_PREFIX = "!add "
 local REMOVE_PREFIX = "!remove "
-local RESET_PREFIX = "!reset "
 local DUPLICATE_COOLDOWN = 1.0
 
 local AuthorizedUsers = { "BLACKGOKU_0707", "Aid3no" }
@@ -53,7 +66,6 @@ end
 
 local isAdding = false
 local isRemoving = false
-local isResetting = false
 local lastText = ""
 local lastTime = 0
 
@@ -391,10 +403,14 @@ local function normalizeName(name)
 end
 
 -- =========================================================
--- 4. GET OWNED INVENTORY
+-- 4. GET OWNED INVENTORY (NIL-SAFE)
 -- =========================================================
 
 local function getItemMetadata(itemId)
+	if not ItemConfig or type(ItemConfig.tryGet) ~= "function" then
+		return "", ""
+	end
+
 	local ok, cfg = pcall(function()
 		return ItemConfig.tryGet(itemId)
 	end)
@@ -420,6 +436,10 @@ end
 local function buildOwnedInventory()
 	local ownedIds = {}
 	local ownedStorageKeys = {}
+
+	if not ItemReplicationService or not KEYS then
+		return ownedIds, ownedStorageKeys
+	end
 
 	local buckets = {
 		KEYS.IS_OWNED,
@@ -514,8 +534,8 @@ local function tryAddIdentifier(identifier)
 		return "error"
 	end
 
-	-- Server returns false when the item cannot be added
-	if result == false then
+	-- Server returns false or nil when the item cannot be added
+	if result == false or result == nil then
 		return "rejected"
 	end
 
@@ -785,517 +805,6 @@ local function InvokeTradeAction(action)
 end
 
 -- =========================================================
--- 6C. RESET FRUIT / SKIN FROM TREASURE
--- =========================================================
-
-local ResetDisplayNames = {
-	-- Physical Fruits
-	["rocket"] = "Rocket",
-	["spin"] = "Spin",
-	["blade"] = "Blade",
-	["chop"] = "Blade",
-	["spring"] = "Spring",
-	["bomb"] = "Bomb",
-	["smoke"] = "Smoke",
-	["spike"] = "Spike",
-	["flame"] = "Flame",
-	["ice"] = "Ice",
-	["sand"] = "Sand",
-	["dark"] = "Dark",
-	["eagle"] = "Eagle",
-	["falcon"] = "Eagle",
-	["diamond"] = "Diamond",
-	["light"] = "Light",
-	["rubber"] = "Rubber",
-	["ghost"] = "Ghost",
-	["revive"] = "Ghost",
-	["magma"] = "Magma",
-	["quake"] = "Quake",
-	["buddha"] = "Buddha",
-	["love"] = "Love",
-	["creation"] = "Creation",
-	["barrier"] = "Creation",
-	["spider"] = "Spider",
-	["sound"] = "Sound",
-	["phoenix"] = "Phoenix",
-	["portal"] = "Portal",
-	["door"] = "Portal",
-	["lightning"] = "Lightning",
-	["rumble"] = "Lightning",
-	["pain"] = "Pain",
-	["paw"] = "Pain",
-	["blizzard"] = "Blizzard",
-	["gravity"] = "Gravity",
-	["mammoth"] = "Mammoth",
-	["trex"] = "T-Rex",
-	["t-rex"] = "T-Rex",
-	["dough"] = "Dough",
-	["shadow"] = "Shadow",
-	["venom"] = "Venom",
-	["gas"] = "Gas",
-	["spirit"] = "Spirit",
-	["soul"] = "Spirit",
-	["tiger"] = "Tiger",
-	["leopard"] = "Tiger",
-	["leo"] = "Tiger",
-	["yeti"] = "Yeti",
-	["magnet"] = "Magnet",
-	["kitsune"] = "Kitsune",
-	["control"] = "Control",
-	["dragon west"] = "Dragon (West)",
-	["west dragon"] = "Dragon (West)",
-	["dragon east"] = "Dragon (East)",
-	["east dragon"] = "Dragon (East)",
-	["dragon"] = "Dragon",
-
-	-- Limited Fruit Skins
-	["ember"] = "Ember",
-	["ember dragon"] = "Ember",
-	["west ember"] = "West Ember",
-	["east ember"] = "East Ember",
-	["eclipse"] = "Eclipse",
-	["eclipse dragon"] = "Eclipse",
-	["west eclipse"] = "West Eclipse",
-	["east eclipse"] = "East Eclipse",
-	["blood moon"] = "Blood Moon",
-	["blood moon dragon"] = "Blood Moon",
-	["west blood moon"] = "West Blood Moon",
-	["east blood moon"] = "East Blood Moon",
-	["phoenix sky"] = "Phoenix Sky",
-	["phoenix sky dragon"] = "Phoenix Sky",
-	["west phoenix sky"] = "West Phoenix Sky",
-	["east phoenix sky"] = "East Phoenix Sky",
-	["violet night"] = "Violet Night",
-	["violet night dragon"] = "Violet Night",
-	["west violet night"] = "West Violet Night",
-	["east violet night"] = "East Violet Night",
-
-	["crimson"] = "Crimson",
-	["crimson kitsune"] = "Crimson Kitsune",
-	["galaxy"] = "Galaxy",
-	["galaxy kitsune"] = "Galaxy Kitsune",
-	["empyrean kitsune"] = "Empyrean Kitsune",
-	["empyrean"] = "Empyrean",
-
-	["sadness"] = "Sadness",
-	["sadness pain"] = "Sadness Pain",
-	["torment"] = "Torment",
-	["torment pain"] = "Torment Pain",
-	["frustration"] = "Frustration",
-	["frustration pain"] = "Frustration Pain",
-	["celestial"] = "Celestial",
-	["celestial pain"] = "Celestial Pain",
-	["super spirit"] = "Super Spirit",
-	["super spirit pain"] = "Super Spirit Pain",
-
-	["yellow lightning"] = "Yellow Lightning",
-	["purple lightning"] = "Purple Lightning",
-	["green lightning"] = "Green Lightning",
-	["red lightning"] = "Red Lightning",
-	["blue lightning"] = "Blue Lightning",
-
-	["divine"] = "Divine",
-	["divine portal"] = "Divine Portal",
-	["pink portal"] = "Pink Portal",
-	["orange portal"] = "Orange Portal",
-	["blue portal"] = "Blue Portal",
-
-	["emerald"] = "Emerald",
-	["emerald diamond"] = "Emerald Diamond",
-	["rose quartz"] = "Rose Quartz",
-	["rose quartz diamond"] = "Rose Quartz Diamond",
-	["topaz"] = "Topaz",
-	["topaz diamond"] = "Topaz Diamond",
-	["ruby"] = "Ruby",
-	["ruby diamond"] = "Ruby Diamond",
-
-	["glacier"] = "Glacier",
-	["glacier eagle"] = "Glacier Eagle",
-	["requiem"] = "Requiem",
-	["requiem eagle"] = "Requiem Eagle",
-	["matrix"] = "Matrix",
-	["matrix eagle"] = "Matrix Eagle",
-	["matrix parrot"] = "Matrix Parrot",
-	["parrot"] = "Parrot",
-	["parrot eagle"] = "Parrot Eagle",
-
-	["nuclear"] = "Nuclear",
-	["nuclear bomb"] = "Nuclear Bomb",
-	["thermite"] = "Thermite",
-	["thermite bomb"] = "Thermite Bomb",
-	["azura"] = "Azura",
-	["azura bomb"] = "Azura Bomb",
-	["celebration"] = "Celebration",
-	["celebration bomb"] = "Celebration Bomb",
-
-	["arcsteel"] = "Arcsteel",
-	["arcsteel magnet"] = "Arcsteel Magnet",
-	["runic"] = "Runic",
-	["runic yeti"] = "Runic Yeti",
-	["runic fiend"] = "Runic Fiend",
-	["fiend"] = "Fiend",
-	["fiend yeti"] = "Fiend Yeti",
-	["starlight"] = "Starlight",
-	["starlight gravity"] = "Starlight Gravity",
-	["heavenly gravity"] = "Heavenly Gravity",
-	["lime"] = "Lime",
-	["lime blade"] = "Lime Blade",
-	["werewolf"] = "Werewolf",
-	["werewolf tiger"] = "Werewolf Tiger",
-	["hellfire"] = "Hellfire",
-	["hellfire gas"] = "Hellfire Gas",
-}
-
-local function resetNormalize(text)
-	return tostring(text or "")
-		:lower()
-		:gsub("%s+", " ")
-		:match("^%s*(.-)%s*$")
-end
-
-local function isResetGuiVisible(gui)
-	if not gui then
-		return false
-	end
-	local cur = gui
-	while cur and cur ~= PlayerGui do
-		if cur:IsA("ScreenGui") and not cur.Enabled then
-			return false
-		end
-		if cur:IsA("GuiObject") and not cur.Visible then
-			return false
-		end
-		cur = cur.Parent
-	end
-	if gui:IsA("GuiObject") then
-		return gui.AbsoluteSize.X > 1 and gui.AbsoluteSize.Y > 1
-	end
-	return true
-end
-
-local function clickResetButton(button)
-	if not button or not button:IsA("GuiObject") then
-		return false
-	end
-
-	if typeof(firesignal) == "function" then
-		pcall(function() firesignal(button.MouseButton1Click) end)
-		pcall(function() firesignal(button.Activated) end)
-	end
-	if button:IsA("GuiButton") then
-		pcall(function() button:Activate() end)
-	end
-
-	local inset = GuiService:GetGuiInset()
-	local pos = button.AbsolutePosition
-	local size = button.AbsoluteSize
-	local x = pos.X + (size.X * 0.5)
-	local y = pos.Y + (size.Y * 0.5) + inset.Y
-
-	pcall(function()
-		VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
-		task.wait(0.05)
-		VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
-	end)
-
-	return true
-end
-
-local function findResetTextBox(parent)
-	if not parent then
-		return nil
-	end
-	if parent:IsA("TextBox") then
-		return parent
-	end
-	for _, obj in ipairs(parent:GetDescendants()) do
-		if obj:IsA("TextBox") then
-			return obj
-		end
-	end
-	return nil
-end
-
-local function openResetTreasure()
-	local invGui = PlayerGui:FindFirstChild("Inventory")
-	local invInner = invGui and invGui:FindFirstChild("Inventory")
-	local main = invInner and invInner:FindFirstChild("Main")
-
-	if not isResetGuiVisible(main) then
-		local menuBtn = PlayerGui:FindFirstChild("HUDRoot")
-			and PlayerGui.HUDRoot:FindFirstChild("Menu", true)
-		local itemsBtn = PlayerGui:FindFirstChild("HUDRoot")
-			and PlayerGui.HUDRoot:FindFirstChild("Items", true)
-
-		local menuExact = PlayerGui:FindFirstChild("HUDRoot")
-		if menuExact then
-			local m = menuExact:FindFirstChild("Menu", true)
-			local it = menuExact:FindFirstChild("Items", true)
-			if m and not isResetGuiVisible(it) then
-				clickResetButton(m)
-				task.wait(0.35)
-				it = menuExact:FindFirstChild("Items", true)
-			end
-			if it and isResetGuiVisible(it) then
-				clickResetButton(it)
-				task.wait(0.45)
-			end
-		end
-
-		invGui = PlayerGui:FindFirstChild("Inventory")
-		invInner = invGui and invGui:FindFirstChild("Inventory")
-		main = invInner and invInner:FindFirstChild("Main")
-	end
-
-	if not invInner or not main then
-		warn("[Reset] Inventory Main panel not found.")
-		return nil, nil
-	end
-
-	local nav = main:FindFirstChild("NavigationRail")
-	local treasureButton = nav and nav:FindFirstChild("Category2")
-
-	if not treasureButton then
-		warn("[Reset] Treasure button (Category2) not found.")
-		return nil, nil
-	end
-
-	clickResetButton(treasureButton)
-	task.wait(0.4)
-
-	local pageContent = main:FindFirstChild("PageContent")
-	local grid = pageContent and pageContent:FindFirstChild("TileGrid")
-
-	if not grid then
-		warn("[Reset] Treasure TileGrid not found.")
-		return nil, nil
-	end
-
-	return invInner, grid
-end
-
-local function searchResetTreasure(invInner, query)
-	local main = invInner and invInner:FindFirstChild("Main")
-	local pageContent = main and main:FindFirstChild("PageContent")
-	local toolbar = pageContent and pageContent:FindFirstChild("ToolBar")
-	local searchField = toolbar and toolbar:FindFirstChild("SearchTextField")
-
-	if not searchField then
-		warn("[Reset] SearchTextField not found.")
-		return false
-	end
-
-	clickResetButton(searchField)
-	task.wait(0.15)
-
-	local searchBox = findResetTextBox(searchField) or findResetTextBox(toolbar)
-	if not searchBox then
-		warn("[Reset] Search TextBox not found.")
-		return false
-	end
-
-	searchBox:CaptureFocus()
-	searchBox.Text = query
-	searchBox:ReleaseFocus(true)
-
-	task.wait(0.35)
-	return true
-end
-
-local function getResetTileName(tile)
-	local details = tile:FindFirstChild("Details")
-	if not details then
-		return ""
-	end
-
-	local line1 = details:FindFirstChild("Line-1")
-	local line2 = details:FindFirstChild("Line-2")
-
-	local first = (line1 and line1:IsA("TextLabel") and line1.Text) or ""
-	local second = (line2 and line2:IsA("TextLabel") and line2.Text) or ""
-
-	if first ~= "" and second ~= "" then
-		return resetNormalize(first .. " " .. second)
-	end
-
-	return resetNormalize(first ~= "" and first or second)
-end
-
-local function findResetTile(grid, displayName)
-	local wanted = resetNormalize(displayName)
-
-	for _, tile in ipairs(grid:GetChildren()) do
-		if tile:IsA("GuiButton") and isResetGuiVisible(tile) then
-			local details = tile:FindFirstChild("Details")
-			local category = details and details:FindFirstChild("Category")
-			local categoryName = (category and category:IsA("TextLabel") and category.Text) or ""
-
-			local tileName = getResetTileName(tile)
-
-			if resetNormalize(categoryName) == "blox fruit" and tileName == wanted then
-				return tile
-			end
-		end
-	end
-
-	return nil
-end
-
-local function equipResetTile(invInner, tile, displayName)
-	if not tile then
-		return false
-	end
-
-	clickResetButton(tile)
-	task.wait(0.4)
-
-	local rightCard = invInner and invInner:FindFirstChild("RightCard")
-	if not rightCard or not isResetGuiVisible(rightCard) then
-		warn("[Reset] RightCard not found or not visible.")
-		return false
-	end
-
-	-- Verify RightCard title matches requested displayName before equipping
-	local wanted = resetNormalize(displayName)
-	local titleMatched = false
-	for _, lbl in ipairs(rightCard:GetDescendants()) do
-		if lbl:IsA("TextLabel") and isResetGuiVisible(lbl) and resetNormalize(lbl.Text) == wanted then
-			titleMatched = true
-			break
-		end
-	end
-	if not titleMatched then
-		warn("[Reset] RightCard title did not match expected item:", displayName)
-		return false
-	end
-
-	local itemCard = rightCard:FindFirstChild("ItemCard")
-	local buttons = itemCard and itemCard:FindFirstChild("Buttons")
-	local equipButton = buttons and buttons:FindFirstChild("Action-EquipFruit")
-
-	if not equipButton or not isResetGuiVisible(equipButton) then
-		warn("[Reset] Action-EquipFruit button is unavailable.")
-		return false
-	end
-
-	return clickResetButton(equipButton)
-end
-
-local function resetCharacterAndWait()
-	local oldCharacter = LocalPlayer.Character
-
-	if not oldCharacter then
-		warn("[Reset] Character not found.")
-		return false
-	end
-
-	local humanoid = oldCharacter:FindFirstChildOfClass("Humanoid")
-
-	if not humanoid or humanoid.Health <= 0 then
-		warn("[Reset] Character cannot be reset.")
-		return false
-	end
-
-	local newCharacter = nil
-	local connection = LocalPlayer.CharacterAdded:Connect(function(character)
-		if character ~= oldCharacter then
-			newCharacter = character
-		end
-	end)
-
-	humanoid.Health = 0
-
-	local startTime = os.clock()
-
-	while not newCharacter and os.clock() - startTime < 15 do
-		task.wait(0.1)
-	end
-
-	connection:Disconnect()
-
-	if not newCharacter then
-		warn("[Reset] Respawn timed out.")
-		return false
-	end
-
-	local newHumanoid = newCharacter:WaitForChild("Humanoid", 10)
-
-	if not newHumanoid then
-		warn("[Reset] New Humanoid not found.")
-		return false
-	end
-
-	print("[Reset] Character respawned successfully.")
-	return true
-end
-
-local function resetFruitItem(rawInput)
-	if isResetting then
-		warn("[Reset] Another reset is already running.")
-		return
-	end
-
-	local entry, itemName, status = getRegistryEntry(rawInput)
-
-	if not entry or status ~= "found" then
-		warn("[Reset] Item not found in registry:", rawInput)
-		return
-	end
-
-	local displayName = ResetDisplayNames[itemName]
-	if not displayName then
-		warn("[Reset] Item type is not supported by !reset:", itemName)
-		return
-	end
-
-	isResetting = true
-
-	local success, result = pcall(function()
-		print("[Reset] Searching Treasure for:", displayName)
-
-		local invInner, grid = openResetTreasure()
-
-		if not invInner or not grid then
-			return false
-		end
-
-		if not searchResetTreasure(invInner, displayName) then
-			return false
-		end
-
-		local tile = findResetTile(grid, displayName)
-
-		if not tile then
-			warn("[Reset] Exact Treasure item not found:", displayName)
-			return false
-		end
-
-		print("[Reset] Matching Treasure tile:", displayName)
-
-		if not equipResetTile(invInner, tile, displayName) then
-			warn("[Reset] Could not equip:", displayName)
-			return false
-		end
-
-		task.wait(0.5)
-
-		print("[Reset] Equipped. Resetting character...")
-
-		return resetCharacterAndWait()
-	end)
-
-	isResetting = false
-
-	if not success then
-		warn("[Reset] Error:", result)
-	elseif result then
-		print("[Reset] Completed:", itemName)
-	else
-		warn("[Reset] Failed:", itemName)
-	end
-end
-
--- =========================================================
 -- 7. CHAT COMMAND HANDLER
 -- =========================================================
 
@@ -1315,33 +824,6 @@ local function handleChatCommand(rawText)
 		lastText = lowerText
 		lastTime = now
 		InvokeTradeAction(lowerText)
-		return
-	end
-
-	-- !reset <fruitname>
-	if lowerText:sub(1, #RESET_PREFIX) == RESET_PREFIX then
-		local now = os.clock()
-
-		if lowerText == lastText
-			and (now - lastTime) < DUPLICATE_COOLDOWN then
-			return
-		end
-
-		lastText = lowerText
-		lastTime = now
-
-		local targetInput = cleanText:sub(#RESET_PREFIX + 1)
-		targetInput = targetInput:match("^%s*(.-)%s*$")
-
-		if targetInput == "" then
-			warn("[Reset] Usage: !reset <fruit name>")
-			return
-		end
-
-		task.spawn(function()
-			resetFruitItem(targetInput)
-		end)
-
 		return
 	end
 
@@ -1609,6 +1091,6 @@ print("[Trade] Version 5 (Complete Registry) loaded!")
 print("[Trade] Multi-ID + StorageKey Fallback active.")
 print("[Trade] All Physical & Perm Fruits active.")
 print("[Trade] All Gamepasses, Scrolls & Limited Skins active.")
-print("[Trade] Command: !add <item> | !remove <item> | !reset <fruit> | !accept | !cancel")
+print("[Trade] Command: !add <item> | !remove <item> | !accept | !cancel")
 print("[Trade] Examples: !add dragon | !add perm buddha | !add yellow lightning | !add storage")
 print("========================================")
