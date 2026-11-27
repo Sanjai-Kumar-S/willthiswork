@@ -1,6 +1,6 @@
 -- =========================================================
 -- BLOX FRUITS AUTO-SIT + !reset <fruitname>
--- Direct CommF_ LoadFruit + Seated Reset (Zero Menu UI)
+-- Seated Reset -> Respawn -> Direct CommF_ LoadFruit -> Auto-Sit
 -- =========================================================
 
 local Players = game:GetService("Players")
@@ -45,6 +45,11 @@ end
 _G.TradeAddConnections = {}
 _G.TradeAddSessionId = (_G.TradeAddSessionId or 0) + 1
 local CURRENT_SESSION_ID = _G.TradeAddSessionId
+_G.TradeAutoSitPaused = false
+
+local function isAutoSitBlocked()
+	return isResetting or _G.TradeAutoSitPaused
+end
 
 -- =========================================================
 -- 2. FRUIT NAME & STORAGE KEY MAPPING
@@ -140,7 +145,7 @@ local function resolveStorageCandidates(rawInput)
 end
 
 -- =========================================================
--- 3. DIRECT LOADFRUIT & SEATED RESET
+-- 3. RESET FIRST -> LOADFRUIT ON RESPAWN
 -- =========================================================
 
 local function hasFruitInBackpackOrChar(storageKey)
@@ -159,13 +164,20 @@ local function hasFruitInBackpackOrChar(storageKey)
 	return false, nil
 end
 
-local function resetCharacterWhileSeated()
-	local character = LocalPlayer.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+local function resetAndWaitForRespawn()
+	local oldCharacter = LocalPlayer.Character
+	local humanoid = oldCharacter and oldCharacter:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then
 		warn("[Reset] Character not alive to reset.")
 		return false
 	end
+
+	local newCharacter = nil
+	local conn = LocalPlayer.CharacterAdded:Connect(function(char)
+		if char ~= oldCharacter then
+			newCharacter = char
+		end
+	end)
 
 	pcall(function()
 		humanoid.Health = 0
@@ -176,12 +188,33 @@ local function resetCharacterWhileSeated()
 			humanoid:ChangeState(Enum.HumanoidStateType.Dead)
 		end)
 	end
+
+	local t0 = os.clock()
+	while not newCharacter and os.clock() - t0 < 20 do
+		task.wait(0.1)
+	end
+	conn:Disconnect()
+
+	if not newCharacter then
+		warn("[Reset] Respawn timed out.")
+		return false
+	end
+
+	local wsWait = os.clock()
+	while newCharacter.Parent ~= Workspace and os.clock() - wsWait < 10 do
+		task.wait(0.1)
+	end
+
+	newCharacter:WaitForChild("Humanoid", 10)
+	newCharacter:WaitForChild("HumanoidRootPart", 10)
+	LocalPlayer:WaitForChild("Backpack", 10)
+	task.wait(0.8)
 	return true
 end
 
-local function resetFruitDirect(rawInput)
+local function resetFruitFlow(rawInput)
 	if isResetting then
-		warn("[Reset] Already processing a reset.")
+		warn("[Reset] Already running a reset.")
 		return
 	end
 
@@ -192,8 +225,14 @@ local function resetFruitDirect(rawInput)
 	end
 
 	isResetting = true
+	_G.TradeAutoSitPaused = true
 
 	local okRun, errRun = pcall(function()
+		print("[Reset] Resetting out of trade seat...")
+		if not resetAndWaitForRespawn() then
+			return
+		end
+
 		local loadedKey = nil
 		local toolName = nil
 
@@ -211,8 +250,8 @@ local function resetFruitDirect(rawInput)
 
 			if okCall and res == true then
 				loadedKey = storageKey
-				local t0 = os.clock()
-				while os.clock() - t0 < 1.2 do
+				local w0 = os.clock()
+				while os.clock() - w0 < 1.2 do
 					local found, foundName = hasFruitInBackpackOrChar(storageKey)
 					if found then
 						toolName = foundName
@@ -224,23 +263,19 @@ local function resetFruitDirect(rawInput)
 			end
 		end
 
-		if not loadedKey then
-			warn("[Reset] Fruit not found in storage or LoadFruit failed:", table.concat(candidates, " / "))
-			return
+		if loadedKey then
+			print("[Reset] Unstored:", loadedKey, "| Backpack tool:", tostring(toolName))
+		else
+			warn("[Reset] Could not unstore:", table.concat(candidates, " / "))
 		end
-
-		print("[Reset] Loaded fruit:", loadedKey, "| Tool:", tostring(toolName), "-> Resetting...")
-		task.wait(0.25)
-		resetCharacterWhileSeated()
 	end)
 
 	if not okRun then
 		warn("[Reset] Error:", errRun)
 	end
 
-	task.delay(1.0, function()
-		isResetting = false
-	end)
+	_G.TradeAutoSitPaused = false
+	isResetting = false
 end
 
 -- =========================================================
@@ -268,7 +303,7 @@ local function handleChatCommand(rawText)
 		end
 
 		task.spawn(function()
-			resetFruitDirect(targetInput)
+			resetFruitFlow(targetInput)
 		end)
 	end
 end
@@ -302,7 +337,7 @@ else
 end
 
 -- =========================================================
--- 5. CONTINUOUS AUTO-SIT LOOP (NEVER PAUSED BY !reset)
+-- 5. AUTO-SIT LOOP (PAUSES ONLY DURING RESPAWN + LOADFRUIT)
 -- =========================================================
 
 local function TweenToSeat(hrp, targetCFrame, sessionId)
@@ -320,7 +355,7 @@ local function TweenToSeat(hrp, targetCFrame, sessionId)
 	end)
 
 	while not completed do
-		if _G.TradeAddSessionId ~= sessionId then
+		if _G.TradeAddSessionId ~= sessionId or isAutoSitBlocked() then
 			tween:Cancel()
 			conn:Disconnect()
 			return false
@@ -412,6 +447,7 @@ task.spawn(function()
 	while _G.TradeAddSessionId == CURRENT_SESSION_ID do
 		task.wait(0.5)
 		if _G.TradeAddSessionId ~= CURRENT_SESSION_ID then break end
+		if isAutoSitBlocked() then continue end
 
 		local character = LocalPlayer.Character
 		if not character or not character:FindFirstChild("HumanoidRootPart") then continue end
@@ -437,7 +473,7 @@ task.spawn(function()
 
 				if unauthorizedFound then
 					task.wait(2)
-					if _G.TradeAddSessionId ~= CURRENT_SESSION_ID then continue end
+					if _G.TradeAddSessionId ~= CURRENT_SESSION_ID or isAutoSitBlocked() then continue end
 					humanoid.Sit = false
 					humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
 					jumpCooldown = tick() + 2
@@ -470,7 +506,7 @@ task.spawn(function()
 				local tweenOk = TweenToSeat(hrp, targetCF, CURRENT_SESSION_ID)
 				if not tweenOk then continue end
 				task.wait(0.2)
-				if _G.TradeAddSessionId ~= CURRENT_SESSION_ID then continue end
+				if _G.TradeAddSessionId ~= CURRENT_SESSION_ID or isAutoSitBlocked() then continue end
 				if bestSeat
 					and bestSeat.Parent
 					and bestSeat.Occupant == nil
@@ -485,4 +521,4 @@ task.spawn(function()
 	end
 end)
 
-print("[Reset] Direct LoadFruit + Seated Reset + Continuous Auto-Sit loaded!")
+print("[Reset] 1-Reset + Direct LoadFruit + Auto-Sit loaded!")
