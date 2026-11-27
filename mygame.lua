@@ -159,7 +159,7 @@ task.spawn(function()
 	logLine("[SetEquipProbe] Testing Type='SetEquip' payloads...")
 	for i, tbl in ipairs(payloads) do
 		local ok, r1, r2 = pcall(function()
-			return modFunc:InvokeServer(tbl)
+			return modFunc:InvokeServer(table.unpack({ tbl }))
 		end)
 		logLine(string.format("[#%d] %s -> ok=%s | ret1=%s | ret2=%s",
 			i, describeTable(tbl), tostring(ok), tostring(r1), tostring(r2)))
