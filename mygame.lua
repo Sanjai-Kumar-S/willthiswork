@@ -654,33 +654,6 @@ local function addItem(rawInput)
 end
 
 -- =========================================================
--- 6B. TRADE ACTION HANDLER (!accept / !cancel)
--- =========================================================
-
-local function InvokeTradeAction(action)
-	if not TradeFunction then
-		warn("[ERROR] TradeFunction remote missing!")
-		return
-	end
-
-	print("[DEBUG] Processing action via verified remote layout:", action)
-
-	pcall(function()
-		if action == "accept" or action == "!accept" then
-			local args = { "accept" }
-			TradeFunction:InvokeServer(unpack(args))
-			print("[TRADE] !accept command executed")
-		elseif action == "cancel" or action == "!cancel" then
-			local args = { "cancel" }
-			TradeFunction:InvokeServer(unpack(args))
-			print("[TRADE] !cancel command executed")
-		else
-			warn("[TRADE] Unknown command:", action)
-		end
-	end)
-end
-
--- =========================================================
 -- 7. CHAT COMMAND HANDLER
 -- =========================================================
 
@@ -691,17 +664,6 @@ local function handleChatCommand(rawText)
 
 	local cleanText = rawText:match("^%s*(.-)%s*$")
 	local lowerText = cleanText:lower()
-
-	if lowerText == "!accept" or lowerText == "!cancel" then
-		local now = os.clock()
-		if lowerText == lastText and (now - lastTime) < DUPLICATE_COOLDOWN then
-			return
-		end
-		lastText = lowerText
-		lastTime = now
-		InvokeTradeAction(lowerText)
-		return
-	end
 
 	if lowerText:sub(1, #COMMAND_PREFIX) ~= COMMAND_PREFIX then
 		return
@@ -762,6 +724,8 @@ print("[Trade] Version 5 (Complete Registry) loaded!")
 print("[Trade] Multi-ID + StorageKey Fallback active.")
 print("[Trade] All Physical & Perm Fruits active.")
 print("[Trade] All Gamepasses, Scrolls & Limited Skins active.")
-print("[Trade] Command: !add <item> | !accept | !cancel")
+print("[Trade] Command: !add <item>")
 print("[Trade] Examples: !add dragon | !add perm buddha | !add yellow lightning | !add storage")
 print("========================================")
+
+
