@@ -4,24 +4,24 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local lp = Players.LocalPlayer
 local pGui = lp and (lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("PlayerGui", 5))
 
-if _G._BFModTableGui then
-	pcall(function() _G._BFModTableGui:Destroy() end)
-	_G._BFModTableGui = nil
+if _G._BFSetEquipGui then
+	pcall(function() _G._BFSetEquipGui:Destroy() end)
+	_G._BFSetEquipGui = nil
 end
 
 local logs = {}
 
 local sg = Instance.new("ScreenGui")
-sg.Name = "BFModTableGui"
+sg.Name = "BFSetEquipGui"
 sg.ResetOnSpawn = false
 sg.IgnoreGuiInset = true
 sg.DisplayOrder = 999999
 sg.Parent = pGui or game:GetService("CoreGui")
-_G._BFModTableGui = sg
+_G._BFSetEquipGui = sg
 
 local frame = Instance.new("Frame")
-frame.Size = UDim2.fromOffset(520, 300)
-frame.Position = UDim2.new(0.5, -260, 0.5, -150)
+frame.Size = UDim2.fromOffset(540, 310)
+frame.Position = UDim2.new(0.5, -270, 0.5, -155)
 frame.BackgroundColor3 = Color3.fromRGB(20, 22, 28)
 frame.BorderSizePixel = 0
 frame.Active = true
@@ -38,7 +38,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -140, 1, 0)
 title.Position = UDim2.fromOffset(10, 0)
 title.BackgroundTransparency = 1
-title.Text = "ModificationService Table Probe"
+title.Text = "SetEquip Schema Probe (ItemId=539)"
 title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.TextSize = 14
 title.Font = Enum.Font.SourceSansBold
@@ -75,7 +75,7 @@ scroll.CanvasSize = UDim2.fromOffset(0, 0)
 scroll.Parent = frame
 
 local outBox = Instance.new("TextBox")
-outBox.Size = UDim2.new(1, -12, 0, 230)
+outBox.Size = UDim2.new(1, -12, 0, 240)
 outBox.Position = UDim2.fromOffset(6, 4)
 outBox.BackgroundTransparency = 1
 outBox.Text = ""
@@ -97,7 +97,7 @@ local function logLine(msg)
 	local full = table.concat(logs, "\n")
 	outBox.Text = full
 	local lines = select(2, full:gsub("\n", "\n")) + 1
-	local h = math.max(230, lines * 16 + 16)
+	local h = math.max(240, lines * 16 + 16)
 	outBox.Size = UDim2.new(1, -12, 0, h)
 	scroll.CanvasSize = UDim2.fromOffset(0, h + 8)
 end
@@ -119,7 +119,7 @@ end)
 
 closeBtn.MouseButton1Click:Connect(function()
 	pcall(function() sg:Destroy() end)
-	_G._BFModTableGui = nil
+	_G._BFSetEquipGui = nil
 end)
 
 local function describeTable(t)
@@ -141,24 +141,30 @@ task.spawn(function()
 		return
 	end
 
-	local typesToTry = { "Skin", "FruitSkin", "Mutation", "Chromatic", "Bomb", "BloxFruit", "Item" }
-	local payloads = {}
+	local payloads = {
+		{ Type = "SetEquip", ItemId = 539, Equipped = true },
+		{ Type = "SetEquip", ItemId = 539, Equip = true },
+		{ Type = "SetEquip", ItemId = 539, Value = true },
+		{ Type = "SetEquip", ItemId = 539, State = true },
+		{ Type = "SetEquip", StorageKey = "Celebration Bomb", Equipped = true },
+		{ Type = "SetEquip", StorageKey = "Celebration Bomb", Equip = true },
+		{ Type = "SetEquip", ItemId = 539, StorageKey = "Celebration Bomb", Equipped = true },
+		{ Type = "SetEquip", ItemId = 539, Target = "Bomb", Equipped = true },
+		{ Type = "SetEquip", ItemId = 539, Category = "Bomb", Equipped = true },
+		{ Type = "SetEquip", ItemId = 539, Fruit = "Bomb", Equipped = true },
+		{ Type = "SetEquip", SkinId = 539, Equipped = true },
+		{ Type = "SetEquip", Skin = "Celebration Bomb", Equipped = true },
+	}
 
-	for _, tName in ipairs(typesToTry) do
-		table.insert(payloads, { { Type = tName, ItemId = 539, Equipped = true } })
-		table.insert(payloads, { { Type = tName, ItemId = 539, StorageKey = "Celebration Bomb", Equipped = true } })
-		table.insert(payloads, { { Type = tName, Id = 539, Equipped = true } })
-	end
-
-	logLine("[TableProbe] Testing table payloads on RF/ModificationFunction...")
-	for i, callArgs in ipairs(payloads) do
+	logLine("[SetEquipProbe] Testing Type='SetEquip' payloads...")
+	for i, tbl in ipairs(payloads) do
 		local ok, r1, r2 = pcall(function()
-			return modFunc:InvokeServer(table.unpack(callArgs))
+			return modFunc:InvokeServer(tbl)
 		end)
 		logLine(string.format("[#%d] %s -> ok=%s | ret1=%s | ret2=%s",
-			i, describeTable(callArgs[1]), tostring(ok), tostring(r1), tostring(r2)))
-		task.wait(0.2)
+			i, describeTable(tbl), tostring(ok), tostring(r1), tostring(r2)))
+		task.wait(0.25)
 	end
 
-	logLine("[TableProbe] Done. Click Copy to grab output.")
+	logLine("[SetEquipProbe] Done. Click Copy to grab output.")
 end)
