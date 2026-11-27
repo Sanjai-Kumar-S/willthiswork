@@ -25,12 +25,12 @@ local KEYS = nil
 local ItemConfig = nil
 
 task.spawn(function()
-	local repMod = ReplicatedStorage:FindFirstChild("ItemReplicationService")
+	local repMod = ReplicatedStorage:WaitForChild("ItemReplicationService", 10)
 	if repMod and repMod:IsA("ModuleScript") then
 		local ok, mod = pcall(require, repMod)
 		if ok then
 			ItemReplicationService = mod
-			local keysMod = repMod:FindFirstChild("KEYS")
+			local keysMod = repMod:WaitForChild("KEYS", 5)
 			if keysMod and keysMod:IsA("ModuleScript") then
 				local kOk, kMod = pcall(require, keysMod)
 				if kOk then
@@ -40,7 +40,7 @@ task.spawn(function()
 		end
 	end
 
-	local cfgMod = ReplicatedStorage:FindFirstChild("ItemConfig")
+	local cfgMod = ReplicatedStorage:WaitForChild("ItemConfig", 10)
 	if cfgMod and cfgMod:IsA("ModuleScript") then
 		local cOk, cMod = pcall(require, cfgMod)
 		if cOk then
@@ -86,6 +86,9 @@ if _G.TradeAddConnections then
 end
 
 _G.TradeAddConnections = {}
+_G.TradeAddSessionId = (_G.TradeAddSessionId or 0) + 1
+local CURRENT_SESSION_ID = _G.TradeAddSessionId
+_G.TradeAutoSitPaused = false
 
 -- =========================================================
 -- 2. COMPLETE ITEM REGISTRY
@@ -726,48 +729,31 @@ local function addItem(rawInput)
 
 	isAdding = true
 
-	local ownedIds, ownedStorageKeys = buildOwnedInventory()
+	local okRun, errRun = pcall(function()
+		local ownedIds, ownedStorageKeys = buildOwnedInventory()
 
-	local numericCandidates = {}
-	local stringCandidates = {}
+		local numericCandidates = {}
+		local stringCandidates = {}
 
-	for _, value in ipairs(entry) do
-		if type(value) == "number" then
-			table.insert(numericCandidates, value)
-		elseif type(value) == "string" then
-			table.insert(stringCandidates, value)
-		end
-	end
-
-	local attempted = {}
-	local added = false
-	local uncertain = false
-
-	-- A. Try owned numeric IDs first
-	for _, itemId in ipairs(numericCandidates) do
-		if ownedIds[itemId] and not attempted[itemId] then
-			attempted[itemId] = true
-			local result = tryAddIdentifier(itemId)
-			if result == "success" then
-				print("[Trade] [+] Successfully added:", itemName, "| ItemId:", itemId)
-				added = true
-				break
-			elseif result == "error" then
-				uncertain = true
-				break
+		for _, value in ipairs(entry) do
+			if type(value) == "number" then
+				table.insert(numericCandidates, value)
+			elseif type(value) == "string" then
+				table.insert(stringCandidates, value)
 			end
 		end
-	end
 
-	-- B. Try owned string StorageKeys
-	if not added and not uncertain then
-		for _, storageKey in ipairs(stringCandidates) do
-			local normalizedKey = storageKey:lower()
-			if ownedStorageKeys[normalizedKey] and not attempted[storageKey] then
-				attempted[storageKey] = true
-				local result = tryAddIdentifier(storageKey)
+		local attempted = {}
+		local added = false
+		local uncertain = false
+
+		-- A. Try owned numeric IDs first
+		for _, itemId in ipairs(numericCandidates) do
+			if ownedIds[itemId] and not attempted[itemId] then
+				attempted[itemId] = true
+				local result = tryAddIdentifier(itemId)
 				if result == "success" then
-					print("[Trade] [+] Successfully added:", itemName, "| StorageKey:", storageKey)
+					print("[Trade] [+] Successfully added:", itemName, "| ItemId:", itemId)
 					added = true
 					break
 				elseif result == "error" then
@@ -776,34 +762,57 @@ local function addItem(rawInput)
 				end
 			end
 		end
-	end
 
-	-- C. Fallback across all remaining candidates
-	if not added and not uncertain then
-		for _, candidate in ipairs(entry) do
-			if not attempted[candidate] then
-				attempted[candidate] = true
-				local result = tryAddIdentifier(candidate)
-				if result == "success" then
-					print("[Trade] [+] Successfully added via fallback:", itemName, "| Identifier:", candidate)
-					added = true
-					break
-				elseif result == "error" then
-					uncertain = true
-					break
+		-- B. Try owned string StorageKeys
+		if not added and not uncertain then
+			for _, storageKey in ipairs(stringCandidates) do
+				local normalizedKey = storageKey:lower()
+				if ownedStorageKeys[normalizedKey] and not attempted[storageKey] then
+					attempted[storageKey] = true
+					local result = tryAddIdentifier(storageKey)
+					if result == "success" then
+						print("[Trade] [+] Successfully added:", itemName, "| StorageKey:", storageKey)
+						added = true
+						break
+					elseif result == "error" then
+						uncertain = true
+						break
+					end
 				end
-				task.wait(0.1)
 			end
 		end
-	end
 
-	-- D. Final status
-	if added then
-		print("[Trade] Finished adding:", itemName)
-	elseif uncertain then
-		warn("[Trade] Result uncertain for:", itemName, "| Stopped to prevent possible duplicate.")
-	else
-		warn("[Trade] Could not add item (not in inventory or table full):", itemName)
+		-- C. Fallback across all remaining candidates
+		if not added and not uncertain then
+			for _, candidate in ipairs(entry) do
+				if not attempted[candidate] then
+					attempted[candidate] = true
+					local result = tryAddIdentifier(candidate)
+					if result == "success" then
+						print("[Trade] [+] Successfully added via fallback:", itemName, "| Identifier:", candidate)
+						added = true
+						break
+					elseif result == "error" then
+						uncertain = true
+						break
+					end
+					task.wait(0.1)
+				end
+			end
+		end
+
+		-- D. Final status
+		if added then
+			print("[Trade] Finished adding:", itemName)
+		elseif uncertain then
+			warn("[Trade] Result uncertain for:", itemName, "| Stopped to prevent possible duplicate.")
+		else
+			warn("[Trade] Could not add item (not in inventory or table full):", itemName)
+		end
+	end)
+
+	if not okRun then
+		warn("[Trade] Unexpected add error:", errRun)
 	end
 
 	isAdding = false
@@ -851,43 +860,49 @@ local function removeItem(rawInput)
 
 	isRemoving = true
 
-	local removed = false
-	local uncertain = false
+	local okRun, errRun = pcall(function()
+		local removed = false
+		local uncertain = false
 
-	for _, candidate in ipairs(entry) do
-		print("[Trade] Trying remove identifier:", candidate, itemName)
+		for _, candidate in ipairs(entry) do
+			print("[Trade] Trying remove identifier:", candidate, itemName)
 
-		local result = tryRemoveIdentifier(candidate)
+			local result = tryRemoveIdentifier(candidate)
 
-		if result == "success" then
-			print(
-				"[Trade] [-] Successfully removed:",
-				itemName,
-				"| Identifier:",
-				candidate
-			)
-			removed = true
-			break
-		elseif result == "error" then
-			uncertain = true
-			break
+			if result == "success" then
+				print(
+					"[Trade] [-] Successfully removed:",
+					itemName,
+					"| Identifier:",
+					candidate
+				)
+				removed = true
+				break
+			elseif result == "error" then
+				uncertain = true
+				break
+			end
+
+			task.wait(0.1)
 		end
 
-		task.wait(0.1)
-	end
+		if removed then
+			print("[Trade] Finished removing:", itemName)
+		elseif uncertain then
+			warn(
+				"[Trade] Remove result uncertain for:",
+				itemName
+			)
+		else
+			warn(
+				"[Trade] Could not remove item from trade table:",
+				itemName
+			)
+		end
+	end)
 
-	if removed then
-		print("[Trade] Finished removing:", itemName)
-	elseif uncertain then
-		warn(
-			"[Trade] Remove result uncertain for:",
-			itemName
-		)
-	else
-		warn(
-			"[Trade] Could not remove item from trade table:",
-			itemName
-		)
+	if not okRun then
+		warn("[Trade] Unexpected remove error:", errRun)
 	end
 
 	isRemoving = false
@@ -949,11 +964,17 @@ local function clickResetButton(button)
 	if not button or not button:IsA("GuiObject") then return false end
 
 	if typeof(firesignal) == "function" then
-		pcall(function() firesignal(button.MouseButton1Click) end)
-		pcall(function() firesignal(button.Activated) end)
+		local ok = pcall(function()
+			firesignal(button.MouseButton1Click)
+		end)
+		if ok then return true end
 	end
+
 	if button:IsA("GuiButton") then
-		pcall(function() button:Activate() end)
+		local ok = pcall(function()
+			button:Activate()
+		end)
+		if ok then return true end
 	end
 
 	local inset = GuiService:GetGuiInset()
@@ -1015,13 +1036,13 @@ local function stepOffTradeTableAndMoveAway()
 		humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
 		task.wait(0.25)
 
-		local targetPos = seatPart.Position + awayDir * 3 + Vector3.new(0, 2, 0)
+		local targetPos = seatPart.Position + awayDir * 6 + Vector3.new(0, 2, 0)
 		hrp.CFrame = CFrame.new(targetPos, targetPos + awayDir)
-		task.wait(0.2)
+		task.wait(0.25)
 	elseif humanoid.Sit then
 		humanoid.Sit = false
 		humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-		task.wait(0.2)
+		task.wait(0.25)
 	end
 end
 
@@ -1049,10 +1070,14 @@ local function openResetTreasure()
 		invGui = PlayerGui:FindFirstChild("Inventory")
 		invInner = invGui and invGui:FindFirstChild("Inventory")
 		main = invInner and invInner:FindFirstChild("Main")
+		local waitStart = os.clock()
+		while main and not isResetGuiVisible(main) and os.clock() - waitStart < 1.5 do
+			task.wait(0.1)
+		end
 	end
 
-	if not invInner or not main then
-		warn("[Reset] Inventory Main panel not found.")
+	if not invInner or not main or not isResetGuiVisible(main) then
+		warn("[Reset] Inventory Main panel not found or not visible.")
 		return nil, nil
 	end
 
@@ -1240,6 +1265,7 @@ local function resetFruitItem(rawInput)
 
 	isResetting = true
 	autoSitEnabled = false
+	_G.TradeAutoSitPaused = true
 
 	local success, result = pcall(function()
 		stepOffTradeTableAndMoveAway()
@@ -1269,6 +1295,7 @@ local function resetFruitItem(rawInput)
 		return resetCharacterAndWait()
 	end)
 
+	_G.TradeAutoSitPaused = false
 	autoSitEnabled = true
 	isResetting = false
 
@@ -1300,7 +1327,9 @@ local function handleChatCommand(rawText)
 		end
 		lastText = lowerText
 		lastTime = now
-		InvokeTradeAction(lowerText)
+		task.spawn(function()
+			InvokeTradeAction(lowerText)
+		end)
 		return
 	end
 
@@ -1340,7 +1369,9 @@ local function handleChatCommand(rawText)
 			return
 		end
 
-		removeItem(targetInput)
+		task.spawn(function()
+			removeItem(targetInput)
+		end)
 		return
 	end
 
@@ -1367,7 +1398,9 @@ local function handleChatCommand(rawText)
 		return
 	end
 
-	addItem(targetInput)
+	task.spawn(function()
+		addItem(targetInput)
+	end)
 end
 
 -- =========================================================
@@ -1380,7 +1413,7 @@ if TextChatService
 	table.insert(
 		_G.TradeAddConnections,
 		TextChatService.MessageReceived:Connect(function(message)
-			if message.TextSource then
+			if message.TextSource and message.Status == Enum.TextChatMessageStatus.Success then
 				local sender = Players:GetPlayerByUserId(message.TextSource.UserId)
 				if sender and IsAuthorized(sender.Name) then
 					handleChatCommand(message.Text)
@@ -1414,7 +1447,7 @@ end
 -- 8B. STRICT WHITELIST AUTO-SIT & TABLE SWITCHING
 -- =========================================================
 
-local function TweenToSeat(hrp, targetCFrame)
+local function TweenToSeat(hrp, targetCFrame, sessionId)
 	local distance = (hrp.Position - targetCFrame.Position).Magnitude
 	local speed = 150
 	local duration = math.clamp(distance / speed, 0.2, 1.5)
@@ -1422,12 +1455,45 @@ local function TweenToSeat(hrp, targetCFrame)
 	local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
 	local tween = TweenService:Create(hrp, tweenInfo, { CFrame = targetCFrame })
 	tween:Play()
-	tween.Completed:Wait()
+
+	local completed = false
+	local conn = tween.Completed:Connect(function()
+		completed = true
+	end)
+
+	while not completed do
+		if _G.TradeAddSessionId ~= sessionId or not autoSitEnabled or _G.TradeAutoSitPaused or isResetting then
+			tween:Cancel()
+			conn:Disconnect()
+			return false
+		end
+		task.wait(0.05)
+	end
+
+	conn:Disconnect()
+	return true
 end
 
 local function IsTradeTableSeat(seat)
 	local parent = seat.Parent
 	return parent and parent.Name == "TradeTable" and (seat.Name == "P1" or seat.Name == "P2")
+end
+
+local cachedTradeSeats = {}
+local lastSeatScan = 0
+
+local function getTradeSeats()
+	if os.clock() - lastSeatScan < 10 and #cachedTradeSeats > 0 then
+		return cachedTradeSeats
+	end
+	lastSeatScan = os.clock()
+	table.clear(cachedTradeSeats)
+	for _, obj in ipairs(Workspace:GetDescendants()) do
+		if obj:IsA("Seat") and IsTradeTableSeat(obj) then
+			table.insert(cachedTradeSeats, obj)
+		end
+	end
+	return cachedTradeSeats
 end
 
 local function GetUnauthorizedPlayerInSeat(seat)
@@ -1503,15 +1569,16 @@ task.spawn(function()
 	local lastTable = nil
 	local jumpCooldown = 0
 
-	while true do
+	while _G.TradeAddSessionId == CURRENT_SESSION_ID do
 		task.wait(0.5)
+		if _G.TradeAddSessionId ~= CURRENT_SESSION_ID then break end
+		if not autoSitEnabled or _G.TradeAutoSitPaused or isResetting then continue end
 
 		local character = LocalPlayer.Character
 		if not character or not character:FindFirstChild("HumanoidRootPart") then continue end
 		local hrp = character.HumanoidRootPart
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		if not humanoid then continue end
-		if not autoSitEnabled then continue end
 
 		if humanoid.SeatPart then
 			local currentSeat = humanoid.SeatPart
@@ -1533,6 +1600,7 @@ task.spawn(function()
 
 				if unauthorizedFound then
 					task.wait(2)
+					if _G.TradeAddSessionId ~= CURRENT_SESSION_ID or not autoSitEnabled or _G.TradeAutoSitPaused or isResetting then continue end
 					humanoid.Sit = false
 					humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
 					jumpCooldown = tick() + 2
@@ -1545,15 +1613,13 @@ task.spawn(function()
 			local bestSeat = nil
 			local shortestDist = math.huge
 
-			for _, obj in pairs(Workspace:GetDescendants()) do
-				if obj:IsA("Seat") and IsTradeTableSeat(obj) then
-					local tableModel = obj.Parent
-					if obj.Parent ~= lastTable and not IsTableBlocked(tableModel) then
-						local dist = (hrp.Position - obj.Position).Magnitude
-						if dist < 800 and dist < shortestDist then
-							shortestDist = dist
-							bestSeat = obj
-						end
+			for _, obj in ipairs(getTradeSeats()) do
+				local tableModel = obj.Parent
+				if obj.Parent ~= lastTable and not IsTableBlocked(tableModel) then
+					local dist = (hrp.Position - obj.Position).Magnitude
+					if dist < 800 and dist < shortestDist then
+						shortestDist = dist
+						bestSeat = obj
 					end
 				end
 			end
@@ -1564,8 +1630,10 @@ task.spawn(function()
 
 			if bestSeat then
 				local targetCF = bestSeat.CFrame + Vector3.new(0, 3, 0)
-				TweenToSeat(hrp, targetCF)
+				local tweenOk = TweenToSeat(hrp, targetCF, CURRENT_SESSION_ID)
+				if not tweenOk then continue end
 				task.wait(0.2)
+				if _G.TradeAddSessionId ~= CURRENT_SESSION_ID or not autoSitEnabled or _G.TradeAutoSitPaused or isResetting then continue end
 				if bestSeat
 					and bestSeat.Parent
 					and bestSeat.Occupant == nil
