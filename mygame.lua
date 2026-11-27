@@ -2,7 +2,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local lp = Players.LocalPlayer
-local pGui = lp and (lp:FindFirstChildOfClass("PlayerGui") or lp:FindFirstChild("PlayerGui"))
+local pGui = lp and (lp:FindFirstChildOfClass("PlayerGui") or lp:WaitForChild("PlayerGui", 5))
 
 if _G._BFSkinProbeGui then
 	pcall(function() _G._BFSkinProbeGui:Destroy() end)
@@ -14,13 +14,24 @@ local logs = {}
 local sg = Instance.new("ScreenGui")
 sg.Name = "BFSkinProbeGui"
 sg.ResetOnSpawn = false
+sg.IgnoreGuiInset = true
 sg.DisplayOrder = 999999
 
+local mounted = false
 for _, container in ipairs({ pGui, game:GetService("CoreGui") }) do
 	if container then
-		local ok = pcall(function() sg.Parent = container end)
-		if ok and sg.Parent == container then break end
+		local ok = pcall(function()
+			sg.Parent = container
+		end)
+		if ok and sg.Parent == container then
+			mounted = true
+			break
+		end
 	end
+end
+
+if not mounted then
+	warn("[SkinProbe] Failed to parent ScreenGui to PlayerGui or CoreGui.")
 end
 
 _G._BFSkinProbeGui = sg
@@ -129,29 +140,39 @@ closeBtn.MouseButton1Click:Connect(function()
 	_G._BFSkinProbeGui = nil
 end)
 
--- =========================================================
--- RUN SKIN INVENTORY CHECK & EQUIP PROBE
--- =========================================================
+logLine("[SkinProbe] GUI initialized. Mounted to: " .. tostring(sg.Parent and sg.Parent:GetFullName() or "NONE"))
 
 task.spawn(function()
 	local okMod, ItemReplicationService, KEYS, ItemConfig = pcall(function()
-		local rep = require(ReplicatedStorage:WaitForChild("ItemReplicationService", 5))
-		local k = require(ReplicatedStorage.ItemReplicationService:WaitForChild("KEYS", 5))
-		local cfg = require(ReplicatedStorage:WaitForChild("ItemConfig", 5))
+		local repMod = ReplicatedStorage:FindFirstChild("ItemReplicationService")
+		local cfgMod = ReplicatedStorage:FindFirstChild("ItemConfig")
+		if not repMod or not cfgMod then
+			error("Missing ItemReplicationService or ItemConfig in ReplicatedStorage")
+		end
+		local rep = require(repMod)
+		local keysMod = repMod:FindFirstChild("KEYS")
+		local k = keysMod and require(keysMod) or nil
+		local cfg = require(cfgMod)
 		return rep, k, cfg
 	end)
 
 	if not okMod or not ItemReplicationService then
-		logLine("[Error] Could not load ItemReplicationService / KEYS / ItemConfig.")
+		logLine("[Error] Module load failed: " .. tostring(ItemReplicationService))
 		return
 	end
 
 	logLine("[SkinCheck] Scanning owned skins/items...")
 	local ownedCelebration = {}
 
-	for bucketName, keyType in pairs({ IS_OWNED = KEYS.IS_OWNED, COUNT = KEYS.COUNT }) do
+	local buckets = {}
+	if KEYS then
+		if KEYS.IS_OWNED then table.insert(buckets, { name = "IS_OWNED", key = KEYS.IS_OWNED }) end
+		if KEYS.COUNT then table.insert(buckets, { name = "COUNT", key = KEYS.COUNT }) end
+	end
+
+	for _, b in ipairs(buckets) do
 		local ok, items = pcall(function()
-			return ItemReplicationService:GetItems(keyType)
+			return ItemReplicationService:GetItems(b.key)
 		end)
 		if ok and type(items) == "table" then
 			for _, item in pairs(items) do
@@ -168,7 +189,7 @@ task.spawn(function()
 
 						if blob:find("bomb", 1, true) or blob:find("celebration", 1, true) or blob:find("skin", 1, true) then
 							logLine(string.format("[%s] ItemId=%s | StorageKey=%s | Display=%s | Val=%s | Cnt=%s",
-								bucketName, tostring(item.ItemId), tostring(skey), tostring(disp), tostring(item.Value), tostring(item.Count)))
+								b.name, tostring(item.ItemId), tostring(skey), tostring(disp), tostring(item.Value), tostring(item.Count)))
 							if blob:find("celebration", 1, true) then
 								table.insert(ownedCelebration, { id = item.ItemId, storageKey = skey, display = disp })
 							end
