@@ -11,12 +11,6 @@ local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 local CommF = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("CommF_")
 
-local function getModificationFunction()
-	local mods = ReplicatedStorage:FindFirstChild("Modules")
-	local net = mods and mods:FindFirstChild("Net")
-	return net and net:FindFirstChild("RF/ModificationFunction")
-end
-
 -- =========================================================
 -- 1. CONFIGURATION & SESSION CLEANUP
 -- =========================================================
@@ -58,7 +52,7 @@ local function isAutoSitBlocked()
 end
 
 -- =========================================================
--- 2. FRUIT & SKIN REGISTRY MAPPING
+-- 2. FRUIT & SKIN STORAGE KEY MAPPING
 -- =========================================================
 
 local Aliases = {
@@ -126,106 +120,107 @@ local FruitStorageKeys = {
 	["dragon"]      = "Dragon-Dragon",
 }
 
--- Skin / Mutation equip IDs from registry dump (primary skin IDs)
-local SkinEquipIds = {
-	-- Bomb skins
-	["celebration bomb"]        = 536,
-	["celebration"]             = 536,
-	["nuclear bomb"]            = 506,
-	["nuclear"]                 = 506,
-	["thermite bomb"]           = 528,
-	["thermite"]                = 528,
-	["azura bomb"]              = 529,
-	["azura"]                   = 529,
+-- Skin / Mutation storage & item keys from registry dump
+local SkinStorageCandidates = {
+	-- Bomb
+	["celebration bomb"]        = { "BOMBSKINcelebration", "Celebration Bomb" },
+	["celebration"]             = { "BOMBSKINcelebration", "Celebration Bomb" },
+	["nuclear bomb"]            = { "BOMBSKINnuclear", "Nuclear Bomb" },
+	["nuclear"]                 = { "BOMBSKINnuclear", "Nuclear Bomb" },
+	["thermite bomb"]           = { "BOMBSKINthermite", "Thermite Bomb" },
+	["thermite"]                = { "BOMBSKINthermite", "Thermite Bomb" },
+	["azura bomb"]              = { "BOMBSKINazura", "Azura Bomb" },
+	["azura"]                   = { "BOMBSKINazura", "Azura Bomb" },
 
-	-- Lightning skins
-	["purple lightning"]        = 464,
-	["yellow lightning"]        = 451,
-	["green lightning"]         = 465,
-	["red lightning"]           = 537,
-	["blue lightning"]          = 461,
+	-- Lightning
+	["purple lightning"]        = { "LIGHTNINGSKINpurple", "Purple Lightning" },
+	["yellow lightning"]        = { "LIGHTNINGSKINyellow", "Yellow Lightning" },
+	["green lightning"]         = { "LIGHTNINGSKINgreen", "Green Lightning" },
+	["red lightning"]           = { "LIGHTNINGSKINred", "Red Lightning" },
+	["blue lightning"]          = { "LIGHTNINGSKINblue" },
 
-	-- Pain skins
-	["celestial pain"]          = 500,
-	["super spirit pain"]       = 538,
-	["super spirit"]            = 538,
+	-- Pain
+	["celestial pain"]          = { "PAINSKINcelestial", "Celestial Pain" },
+	["super spirit pain"]       = { "PAINSKINsuperspirit", "Super Spirit Pain" },
+	["super spirit"]            = { "PAINSKINsuperspirit", "Super Spirit Pain" },
+	["sadness pain"]            = { "Sadness Pain" },
+	["torment pain"]            = { "Torment Pain" },
+	["frustration pain"]        = { "Frustration Pain" },
 
-	-- Portal skins
-	["divine portal"]           = 1049,
-	["pink portal"]             = 453,
-	["orange portal"]           = 457,
-	["blue portal"]             = 466,
+	-- Portal
+	["divine portal"]           = { "PORTALSKINdivine", "Divine Portal" },
+	["pink portal"]             = { "PORTALSKINpink" },
+	["orange portal"]           = { "PORTALSKINorange" },
+	["blue portal"]             = { "PORTALSKINblue" },
 
-	-- Diamond skins
-	["emerald diamond"]         = 456,
-	["rose quartz diamond"]     = 472,
-	["rose quartz"]             = 472,
-	["topaz diamond"]           = 473,
-	["ruby diamond"]            = 455,
+	-- Diamond
+	["emerald diamond"]         = { "DIAMONDSKINgreen", "Emerald Diamond" },
+	["rose quartz diamond"]     = { "DIAMONDSKINpoudretteite", "Rose Quartz Diamond" },
+	["rose quartz"]             = { "DIAMONDSKINpoudretteite", "Rose Quartz Diamond" },
+	["topaz diamond"]           = { "DIAMONDSKINtopaz", "Topaz Diamond" },
+	["ruby diamond"]            = { "DIAMONDSKINred", "Ruby Diamond" },
 
-	-- Eagle skins
-	["glacier eagle"]           = 499,
-	["requiem eagle"]           = 501,
-	["matrix eagle"]            = 497,
-	["parrot eagle"]            = 404,
-	["parrot"]                  = 404,
+	-- Eagle
+	["glacier eagle"]           = { "FALCSKINglacier", "Glacier Eagle" },
+	["requiem eagle"]           = { "FALCSKINrequiem", "Requiem Eagle" },
+	["matrix eagle"]            = { "FALCSKINmatrix", "Matrix Eagle" },
+	["parrot eagle"]            = { "FALCSKINparrot" },
+	["parrot"]                  = { "FALCSKINparrot" },
 
-	-- Kitsune / Empyrean skins & mutation
-	["crimson kitsune"]         = 1045,
-	["crimson"]                 = 1045,
-	["galaxy kitsune"]          = 1046,
-	["galaxy"]                  = 1046,
-	["empyrean kitsune"]        = 1041,
-	["empyrean"]                = 1041,
+	-- Kitsune / Empyrean
+	["crimson kitsune"]         = { "KYUKONSKINcrimson" },
+	["crimson"]                 = { "KYUKONSKINcrimson" },
+	["galaxy kitsune"]          = { "KYUKONSKINgalaxy", "Galaxy Empyrean Kitsune" },
+	["galaxy"]                  = { "KYUKONSKINgalaxy", "Galaxy Empyrean Kitsune" },
+	["empyrean kitsune"]        = { "Empyrean (Kitsune)-Empyrean (Kitsune)" },
+	["empyrean"]                = { "Empyrean (Kitsune)-Empyrean (Kitsune)" },
 
-	-- Tiger skins & mutation
-	["werewolf tiger"]          = 818,
-	["werewolf"]                = 818,
+	-- Tiger
+	["werewolf tiger"]          = { "TIGERSKINwerewolf", "TIGERMUTWerewolf", "Werewolf (Tiger)-Werewolf (Tiger)" },
+	["werewolf"]                = { "TIGERSKINwerewolf", "TIGERMUTWerewolf", "Werewolf (Tiger)-Werewolf (Tiger)" },
 
-	-- Yeti skins & mutation
-	["runic yeti"]              = 1532,
-	["runic"]                   = 1532,
-	["fiend yeti"]              = 1063,
-	["fiend"]                   = 1063,
+	-- Yeti
+	["runic yeti"]              = { "FIENDSKINsealed", "Sealed Fiend" },
+	["runic"]                   = { "FIENDSKINsealed", "Sealed Fiend" },
+	["fiend yeti"]              = { "YETISKINfiend", "YETIMUTFiend", "Fiend (Yeti)-Fiend (Yeti)" },
+	["fiend"]                   = { "YETISKINfiend", "YETIMUTFiend", "Fiend (Yeti)-Fiend (Yeti)" },
 
-	-- Gas skins & mutation
-	["hellfire gas"]            = 1604,
-	["hellfire"]                = 1604,
-
-	-- Magnet & Gravity & Blade skins
-	["arcsteel magnet"]         = 1538,
-	["arcsteel"]                = 1538,
-	["starlight gravity"]       = 1534,
-	["starlight"]               = 1534,
-	["lime blade"]              = 1540,
+	-- Gas, Magnet, Gravity, Blade
+	["hellfire gas"]            = { "HELLFIRESKINdefault", "GASMUTHellfire", "Hellfire (Gas)-Hellfire (Gas)" },
+	["hellfire"]                = { "HELLFIRESKINdefault", "GASMUTHellfire", "Hellfire (Gas)-Hellfire (Gas)" },
+	["arcsteel magnet"]         = { "MAGNETSKINarksteel", "Arcsteel Magnet" },
+	["arcsteel"]                = { "MAGNETSKINarksteel", "Arcsteel Magnet" },
+	["starlight gravity"]       = { "GRAVITYSKINheavenly", "Heavenly Gravity" },
+	["starlight"]               = { "GRAVITYSKINheavenly", "Heavenly Gravity" },
+	["lime blade"]              = { "BLADESKINlime", "Lime Blade" },
 
 	-- Dragon skins & chromatics
-	["west ember dragon"]       = 298,
-	["east ember dragon"]       = 264,
-	["ember dragon"]            = 305,
-	["ember"]                   = 305,
-	["west eclipse dragon"]     = 271,
-	["east eclipse dragon"]     = 281,
-	["eclipse dragon"]          = 303,
-	["eclipse"]                 = 303,
-	["west blood moon dragon"]  = 286,
-	["east blood moon dragon"]  = 273,
-	["blood moon dragon"]       = 306,
-	["blood moon"]              = 306,
-	["west phoenix sky dragon"] = 268,
-	["east phoenix sky dragon"] = 274,
-	["phoenix sky dragon"]      = 302,
-	["phoenix sky"]             = 302,
-	["west violet night dragon"]= 258,
-	["east violet night dragon"]= 299,
-	["violet night dragon"]     = 304,
-	["violet night"]            = 304,
+	["west ember dragon"]       = { "WSTDSKINember", "EmberChromaticDragon" },
+	["east ember dragon"]       = { "ESTDSKINember", "EmberChromaticDragon" },
+	["ember dragon"]            = { "EmberChromaticDragon", "WSTDSKINember", "ESTDSKINember" },
+	["ember"]                   = { "EmberChromaticDragon", "WSTDSKINember", "ESTDSKINember" },
+	["west eclipse dragon"]     = { "WSTDSKINeclipse", "EclipseChromaticDragon" },
+	["east eclipse dragon"]     = { "ESTDSKINeclipse", "EclipseChromaticDragon" },
+	["eclipse dragon"]          = { "EclipseChromaticDragon", "WSTDSKINeclipse", "ESTDSKINeclipse" },
+	["eclipse"]                 = { "EclipseChromaticDragon", "WSTDSKINeclipse", "ESTDSKINeclipse" },
+	["west blood moon dragon"]  = { "WSTDSKINbloodmoon", "BloodmoonChromaticDragon" },
+	["east blood moon dragon"]  = { "ESTDSKINbloodmoon", "BloodmoonChromaticDragon" },
+	["blood moon dragon"]       = { "BloodmoonChromaticDragon", "WSTDSKINbloodmoon", "ESTDSKINbloodmoon" },
+	["blood moon"]              = { "BloodmoonChromaticDragon", "WSTDSKINbloodmoon", "ESTDSKINbloodmoon" },
+	["west phoenix sky dragon"] = { "WSTDSKINphoenixsky", "PhoenixSkyChromaticDragon" },
+	["east phoenix sky dragon"] = { "ESTDSKINphoenixsky", "PhoenixSkyChromaticDragon" },
+	["phoenix sky dragon"]      = { "PhoenixSkyChromaticDragon", "WSTDSKINphoenixsky", "ESTDSKINphoenixsky" },
+	["phoenix sky"]             = { "PhoenixSkyChromaticDragon", "WSTDSKINphoenixsky", "ESTDSKINphoenixsky" },
+	["west violet night dragon"]= { "WSTDSKINvioletnight", "VioletNightChromaticDragon" },
+	["east violet night dragon"]= { "ESTDSKINvioletnight", "VioletNightChromaticDragon" },
+	["violet night dragon"]     = { "VioletNightChromaticDragon", "WSTDSKINvioletnight", "ESTDSKINvioletnight" },
+	["violet night"]            = { "VioletNightChromaticDragon", "WSTDSKINvioletnight", "ESTDSKINvioletnight" },
 
-	-- Dog Blade / Brat skins
-	["dog blade"]               = 1483,
-	["rabid dog blade"]         = 1484,
-	["rabid"]                   = 1484,
-}
+	-- Dog Blade
+	["dog blade"]               = { "BRATSKINdefault", "The Sword Of The Brat" },
+	["rabid dog blade"]         = { "BRATSKINslayer", "The Sword Of The Brat" },
+	["rabid"]                   = { "BRATSKINslayer", "The Sword Of The Brat" },
+}[cite: 2]
 
 local function normalizeName(name)
 	name = tostring(name or ""):lower():gsub("%s+", " "):match("^%s*(.-)%s*$") or ""
@@ -233,23 +228,19 @@ local function normalizeName(name)
 	return Aliases[name] or name
 end
 
-local function resolveSkinId(rawInput)
+local function resolveUnstoreCandidates(rawInput)
 	local key = normalizeName(rawInput)
 	if key == "" then return nil end
-	if SkinEquipIds[key] then
-		return SkinEquipIds[key]
+
+	if SkinStorageCandidates[key] then
+		return SkinStorageCandidates[key]
 	end
-	for k, id in pairs(SkinEquipIds) do
+
+	for k, list in pairs(SkinStorageCandidates) do
 		if k == key or k:find(key, 1, true) then
-			return id
+			return list
 		end
 	end
-	return nil
-end
-
-local function resolveStorageCandidates(rawInput)
-	local key = normalizeName(rawInput)
-	if key == "" then return nil end
 
 	if key == "dragon" then
 		return { "Dragon (West)-Dragon (West)", "Dragon (East)-Dragon (East)", "Dragon-Dragon" }
@@ -262,7 +253,7 @@ local function resolveStorageCandidates(rawInput)
 	local title = key:gsub("(%a)([%w_']*)", function(first, rest)
 		return first:upper() .. rest
 	end)
-	return { title .. "-" .. title }
+	return { title .. "-" .. title, title }
 end
 
 -- =========================================================
@@ -351,15 +342,19 @@ local function jumpOffTableAndStand()
 	return true
 end
 
-local function findFruitTool(storageKey)
-	local baseName = storageKey:match("^(.-)%-") or storageKey
-	local target = baseName:lower()
+local function findMatchingTool(candidateKey, rawQuery)
+	local base = candidateKey:match("^(.-)%-") or candidateKey
+	local t1 = base:lower()
+	local t2 = tostring(rawQuery or ""):lower()
 
 	for _, container in ipairs({ LocalPlayer:FindFirstChild("Backpack"), LocalPlayer.Character }) do
 		if container then
 			for _, item in ipairs(container:GetChildren()) do
-				if item:IsA("Tool") and item.Name:lower():find(target, 1, true) then
-					return item
+				if item:IsA("Tool") then
+					local n = item.Name:lower()
+					if (t1 ~= "" and n:find(t1, 1, true)) or (t2 ~= "" and n:find(t2, 1, true)) then
+						return item
+					end
 				end
 			end
 		end
@@ -367,38 +362,14 @@ local function findFruitTool(storageKey)
 	return nil
 end
 
-local function equipSkinById(skinId)
-	local modFunc = getModificationFunction()
-	if not modFunc then
-		warn("[Equip] RF/ModificationFunction not found.")
-		return false
-	end
-
-	local ok, res = pcall(function()
-		return modFunc:InvokeServer({
-			Type = "SetEquip",
-			IsEquipped = true,
-			ItemId = skinId,
-		})
-	end)
-
-	if ok then
-		print("[Equip] Skin equipped via SetEquip | ItemId:", tostring(skinId))
-		return true
-	else
-		warn("[Equip] SetEquip failed for ItemId:", tostring(skinId), tostring(res))
-		return false
-	end
-end
-
-local function equipFruitOrSkinAction(rawInput)
+local function equipUnstoreAction(rawInput)
 	if isEquipping then
-		warn("[Equip] Already equipping an item.")
+		warn("[Equip] Already unstoring/equipping an item.")
 		return
 	end
 
-	local cleanInput = tostring(rawInput or ""):match("^%s*(.-)%s*$")
-	if cleanInput == "" then
+	local candidates = resolveUnstoreCandidates(rawInput)
+	if not candidates then
 		warn("[Equip] Usage: !equip <fruitname/skinname>")
 		return
 	end
@@ -411,60 +382,45 @@ local function equipFruitOrSkinAction(rawInput)
 		jumpOffTableAndStand()
 		task.wait(0.3)
 
-		-- Check skin / mutation first if explicitly matched in SkinEquipIds
-		local matchedSkinId = resolveSkinId(cleanInput)
-		if matchedSkinId and not FruitStorageKeys[normalizeName(cleanInput)] then
-			equipSkinById(matchedSkinId)
-			return
-		end
+		local loadedTool = nil
+		for _, storageKey in ipairs(candidates) do
+			loadedTool = findMatchingTool(storageKey, rawInput)
+			if loadedTool then
+				break
+			end
 
-		-- Otherwise treat as physical fruit via LoadFruit
-		local candidates = resolveStorageCandidates(cleanInput)
-		if candidates then
-			local equippedTool = nil
-			for _, storageKey in ipairs(candidates) do
-				equippedTool = findFruitTool(storageKey)
-				if equippedTool then
-					break
-				end
+			local okCall, res = pcall(function()
+				return CommF:InvokeServer("LoadFruit", storageKey)
+			end)
+			print(string.format("[Equip] LoadFruit('%s') -> ok=%s | res=%s",
+				storageKey, tostring(okCall), tostring(res)))
 
-				local okCall, res = pcall(function()
-					return CommF:InvokeServer("LoadFruit", storageKey)
-				end)
-
-				if okCall and res ~= false then
-					local deadline = os.clock() + 1.5
-					while os.clock() < deadline do
-						equippedTool = findFruitTool(storageKey)
-						if equippedTool then
-							break
-						end
-						task.wait(0.05)
-					end
-					if equippedTool then
+			if okCall and res ~= false then
+				local deadline = os.clock() + 1.5
+				while os.clock() < deadline do
+					loadedTool = findMatchingTool(storageKey, rawInput)
+					if loadedTool then
 						break
 					end
+					task.wait(0.05)
 				end
-			end
-
-			if equippedTool then
-				local character = LocalPlayer.Character
-				local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-				if humanoid and equippedTool.Parent == LocalPlayer:FindFirstChild("Backpack") then
-					pcall(function()
-						humanoid:EquipTool(equippedTool)
-					end)
+				if loadedTool then
+					break
 				end
-				print("[Equip] Fruit ready & equipped:", equippedTool.Name)
-				return
 			end
 		end
 
-		-- Fallback to skin ID if fruit load didn't equip a tool
-		if matchedSkinId then
-			equipSkinById(matchedSkinId)
+		if loadedTool then
+			local character = LocalPlayer.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			if humanoid and loadedTool.Parent == LocalPlayer:FindFirstChild("Backpack") then
+				pcall(function()
+					humanoid:EquipTool(loadedTool)
+				end)
+			end
+			print("[Equip] Unstored & equipped:", loadedTool.Name)
 		else
-			warn("[Equip] Could not equip:", cleanInput)
+			warn("[Equip] Could not unstore:", table.concat(candidates, " / "))
 		end
 	end)
 
@@ -516,7 +472,7 @@ local function handleChatCommand(rawText)
 			return
 		end
 		task.spawn(function()
-			equipFruitOrSkinAction(targetInput)
+			equipUnstoreAction(targetInput)
 		end)
 	end
 end
