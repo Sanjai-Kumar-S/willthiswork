@@ -550,7 +550,7 @@ local function addItem(rawInput)
 
 	local entry, itemName, status = getRegistryEntry(rawInput)
 
-	if not entry then
+	if not entry or status ~= "found" then
 		warn("[Trade] Item not found in registry:", rawInput)
 		return
 	end
@@ -574,120 +574,67 @@ local function addItem(rawInput)
 	local added = false
 	local uncertain = false
 
-	-- -----------------------------------------------------
-	-- A. Try owned numeric IDs first (in registry order)
-	-- -----------------------------------------------------
-
+	-- A. Try owned numeric IDs first
 	for _, itemId in ipairs(numericCandidates) do
 		if ownedIds[itemId] and not attempted[itemId] then
 			attempted[itemId] = true
-
-			print("[Trade] Trying owned numeric ID:", itemId, itemName)
-
 			local result = tryAddIdentifier(itemId)
-
 			if result == "success" then
-				print(
-					"[Trade] [+] Successfully added:",
-					itemName,
-					"| ItemId:",
-					itemId
-				)
+				print("[Trade] [+] Successfully added:", itemName, "| ItemId:", itemId)
 				added = true
 				break
 			elseif result == "error" then
 				uncertain = true
 				break
 			end
-
-			print("[Trade] ID rejected; trying next candidate:", itemId)
 		end
 	end
 
-	-- -----------------------------------------------------
 	-- B. Try owned string StorageKeys
-	-- -----------------------------------------------------
-
 	if not added and not uncertain then
 		for _, storageKey in ipairs(stringCandidates) do
 			local normalizedKey = storageKey:lower()
-
 			if ownedStorageKeys[normalizedKey] and not attempted[storageKey] then
 				attempted[storageKey] = true
-
-				print("[Trade] Trying owned StorageKey:", storageKey, itemName)
-
 				local result = tryAddIdentifier(storageKey)
-
 				if result == "success" then
-					print(
-						"[Trade] [+] Successfully added:",
-						itemName,
-						"| StorageKey:",
-						storageKey
-					)
+					print("[Trade] [+] Successfully added:", itemName, "| StorageKey:", storageKey)
 					added = true
 					break
 				elseif result == "error" then
 					uncertain = true
 					break
 				end
-
-				print("[Trade] StorageKey rejected:", storageKey)
 			end
 		end
 	end
 
-	-- -----------------------------------------------------
-	-- C. Fallback: If client cache didn't flag it as owned,
-	--    try all candidate IDs and keys sequentially anyway
-	-- -----------------------------------------------------
-
+	-- C. Fallback across all remaining candidates
 	if not added and not uncertain then
 		for _, candidate in ipairs(entry) do
 			if not attempted[candidate] then
 				attempted[candidate] = true
-
-				print("[Trade] Testing fallback identifier:", candidate, "(" .. type(candidate) .. ")")
-
 				local result = tryAddIdentifier(candidate)
-
 				if result == "success" then
-					print(
-						"[Trade] [+] Successfully added via fallback:",
-						itemName,
-						"| Identifier:",
-						candidate
-					)
+					print("[Trade] [+] Successfully added via fallback:", itemName, "| Identifier:", candidate)
 					added = true
 					break
 				elseif result == "error" then
 					uncertain = true
 					break
 				end
-
 				task.wait(0.1)
 			end
 		end
 	end
 
-	-- -----------------------------------------------------
-	-- D. Final Result
-	-- -----------------------------------------------------
-
+	-- D. Final status
 	if added then
 		print("[Trade] Finished adding:", itemName)
 	elseif uncertain then
-		warn(
-			"[Trade] Result uncertain for:",
-			itemName,
-			"| Stopped to prevent possible duplicate."
-		)
+		warn("[Trade] Result uncertain for:", itemName, "| Stopped to prevent possible duplicate.")
 	else
-		warn(
-			"[Trade] Could not add item (not in inventory or table full):",
-			itemName
-		)
+		warn("[Trade] Could not add item (not in inventory or table full):", itemName)
 	end
 
 	isAdding = false
