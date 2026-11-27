@@ -1,7 +1,14 @@
 -- =========================================================
 -- BLOX FRUITS TRADE ADDER V5 + AUTO-SIT + !reset + !equip
--- (Merged: !add / !remove / !accept / !cancel / !reset / !equip)
+-- Universal Executor Edition (All PC & Mobile Executors)
+-- Commands: !add | !remove | !accept | !cancel | !reset | !equip
 -- =========================================================
+
+if not game:IsLoaded() then
+	pcall(function()
+		game.Loaded:Wait()
+	end)
+end
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -10,39 +17,28 @@ local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
+while not LocalPlayer do
+	task.wait(0.1)
+	LocalPlayer = Players.LocalPlayer
+end
 
-local TradeFunction = ReplicatedStorage
-	:WaitForChild("Remotes")
-	:WaitForChild("TradeFunction")
+local env = (type(getgenv) == "function" and getgenv()) or _G
+local tableUnpack = table.unpack or unpack
 
-local ItemReplicationService = nil
-local KEYS = nil
-local ItemConfig = nil
-
-task.spawn(function()
-	local repMod = ReplicatedStorage:FindFirstChild("ItemReplicationService")
-	if repMod and repMod:IsA("ModuleScript") then
-		local ok, mod = pcall(require, repMod)
-		if ok then
-			ItemReplicationService = mod
-			local keysMod = repMod:FindFirstChild("KEYS")
-			if keysMod and keysMod:IsA("ModuleScript") then
-				local kOk, kMod = pcall(require, keysMod)
-				if kOk then
-					KEYS = kMod
-				end
-			end
-		end
+local function getTradeFunction()
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	if remotes then
+		local tf = remotes:FindFirstChild("TradeFunction")
+		if tf then return tf end
 	end
+	local found = ReplicatedStorage:FindFirstChild("TradeFunction", true)
+	if found then return found end
 
-	local cfgMod = ReplicatedStorage:FindFirstChild("ItemConfig")
-	if cfgMod and cfgMod:IsA("ModuleScript") then
-		local cOk, cMod = pcall(require, cfgMod)
-		if cOk then
-			ItemConfig = cMod
-		end
-	end
-end)
+	local ok, tf = pcall(function()
+		return ReplicatedStorage:WaitForChild("Remotes", 5):WaitForChild("TradeFunction", 5)
+	end)
+	return ok and tf or nil
+end
 
 local function getCommF()
 	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
@@ -50,20 +46,59 @@ local function getCommF()
 		local cf = remotes:FindFirstChild("CommF_")
 		if cf then return cf end
 	end
+	local found = ReplicatedStorage:FindFirstChild("CommF_", true)
+	if found then return found end
+
 	local ok, cf = pcall(function()
 		return ReplicatedStorage:WaitForChild("Remotes", 5):WaitForChild("CommF_", 5)
 	end)
 	return ok and cf or nil
 end
 
-local CommF = getCommF()
-print("[Init] CommF_ found:", tostring(CommF ~= nil))
-
 local function getModificationFunction()
 	local mods = ReplicatedStorage:FindFirstChild("Modules")
 	local net = mods and mods:FindFirstChild("Net")
 	return net and net:FindFirstChild("RF/ModificationFunction")
 end
+
+local TradeFunction = getTradeFunction()
+local CommF = getCommF()
+
+print("[Init] TradeFunction:", TradeFunction and TradeFunction:GetFullName() or "NOT FOUND")
+print("[Init] CommF_:", CommF and CommF:GetFullName() or "NOT FOUND")
+
+local ItemReplicationService = nil
+local KEYS = nil
+local ItemConfig = nil
+
+task.spawn(function()
+	if type(require) ~= "function" then
+		return
+	end
+
+	local repMod = ReplicatedStorage:FindFirstChild("ItemReplicationService", true)
+	if repMod and repMod:IsA("ModuleScript") then
+		local ok, mod = pcall(require, repMod)
+		if ok and type(mod) == "table" then
+			ItemReplicationService = mod
+			local keysMod = repMod:FindFirstChild("KEYS")
+			if keysMod and keysMod:IsA("ModuleScript") then
+				local kOk, kMod = pcall(require, keysMod)
+				if kOk and type(kMod) == "table" then
+					KEYS = kMod
+				end
+			end
+		end
+	end
+
+	local cfgMod = ReplicatedStorage:FindFirstChild("ItemConfig", true)
+	if cfgMod and cfgMod:IsA("ModuleScript") then
+		local cOk, cMod = pcall(require, cfgMod)
+		if cOk and type(cMod) == "table" then
+			ItemConfig = cMod
+		end
+	end
+end)
 
 -- =========================================================
 -- 1. CONFIGURATION & SESSION CLEANUP
@@ -99,20 +134,29 @@ local lastCmdTime = 0
 local lastTable = nil
 
 -- Disconnect old listeners when re-executed
-if _G.TradeAddConnections then
-	for _, connection in ipairs(_G.TradeAddConnections) do
+if type(env.TradeAddConnections) == "table" then
+	for _, connection in ipairs(env.TradeAddConnections) do
 		pcall(function()
 			connection:Disconnect()
 		end)
 	end
 end
 
-_G.TradeAddConnections = {}
-_G.TradeAddSessionId = (_G.TradeAddSessionId or 0) + 1
-local CURRENT_SESSION_ID = _G.TradeAddSessionId
+env.TradeAddConnections = {}
+env.TradeAddSessionId = (tonumber(env.TradeAddSessionId) or 0) + 1
+local CURRENT_SESSION_ID = env.TradeAddSessionId
 
 local function isAutoSitBlocked()
 	return autoSitPaused or isEquipping
+end
+
+local function isSeatedAtTradeTable()
+	local char = LocalPlayer.Character
+	local hum = char and char:FindFirstChildOfClass("Humanoid")
+	local seat = hum and hum.SeatPart
+	if not seat then return false end
+	local parent = seat.Parent
+	return parent and parent.Name == "TradeTable" and (seat.Name == "P1" or seat.Name == "P2")
 end
 
 -- =========================================================
@@ -553,13 +597,22 @@ end
 -- =========================================================
 
 local function tryAddIdentifier(identifier)
+	local tf = TradeFunction or getTradeFunction()
+	if not tf then
+		warn("[Trade] TradeFunction remote missing!")
+		return "error"
+	end
+
 	local callOk, result = pcall(function()
-		return TradeFunction:InvokeServer(
+		return tf:InvokeServer(
 			"addItem",
 			identifier,
 			1
 		)
 	end)
+
+	print(string.format("[TradeDebug] addItem(%s) -> ok=%s | type=%s | res=%s",
+		tostring(identifier), tostring(callOk), typeof(result), tostring(result)))
 
 	if not callOk then
 		warn(
@@ -583,6 +636,10 @@ local function addItem(rawInput)
 		return
 	end
 
+	if not isSeatedAtTradeTable() then
+		warn("[Trade] Warning: LocalPlayer is not seated at a TradeTable right now.")
+	end
+
 	local entry, itemName, status = getRegistryEntry(rawInput)
 
 	if not entry or status ~= "found" then
@@ -592,48 +649,31 @@ local function addItem(rawInput)
 
 	isAdding = true
 
-	local ownedIds, ownedStorageKeys = buildOwnedInventory()
+	local ok, err = pcall(function()
+		local ownedIds, ownedStorageKeys = buildOwnedInventory()
 
-	local numericCandidates = {}
-	local stringCandidates = {}
+		local numericCandidates = {}
+		local stringCandidates = {}
 
-	for _, value in ipairs(entry) do
-		if type(value) == "number" then
-			table.insert(numericCandidates, value)
-		elseif type(value) == "string" then
-			table.insert(stringCandidates, value)
-		end
-	end
-
-	local attempted = {}
-	local added = false
-	local uncertain = false
-
-	-- A. Try owned numeric IDs first
-	for _, itemId in ipairs(numericCandidates) do
-		if ownedIds[itemId] and not attempted[itemId] then
-			attempted[itemId] = true
-			local result = tryAddIdentifier(itemId)
-			if result == "success" then
-				print("[Trade] [+] Successfully added:", itemName, "| ItemId:", itemId)
-				added = true
-				break
-			elseif result == "error" then
-				uncertain = true
-				break
+		for _, value in ipairs(entry) do
+			if type(value) == "number" then
+				table.insert(numericCandidates, value)
+			elseif type(value) == "string" then
+				table.insert(stringCandidates, value)
 			end
 		end
-	end
 
-	-- B. Try owned string StorageKeys
-	if not added and not uncertain then
-		for _, storageKey in ipairs(stringCandidates) do
-			local normalizedKey = storageKey:lower()
-			if ownedStorageKeys[normalizedKey] and not attempted[storageKey] then
-				attempted[storageKey] = true
-				local result = tryAddIdentifier(storageKey)
+		local attempted = {}
+		local added = false
+		local uncertain = false
+
+		-- A. Try owned numeric IDs first
+		for _, itemId in ipairs(numericCandidates) do
+			if ownedIds[itemId] and not attempted[itemId] then
+				attempted[itemId] = true
+				local result = tryAddIdentifier(itemId)
 				if result == "success" then
-					print("[Trade] [+] Successfully added:", itemName, "| StorageKey:", storageKey)
+					print("[Trade] [+] Successfully added:", itemName, "| ItemId:", itemId)
 					added = true
 					break
 				elseif result == "error" then
@@ -642,34 +682,57 @@ local function addItem(rawInput)
 				end
 			end
 		end
-	end
 
-	-- C. Fallback across all remaining candidates
-	if not added and not uncertain then
-		for _, candidate in ipairs(entry) do
-			if not attempted[candidate] then
-				attempted[candidate] = true
-				local result = tryAddIdentifier(candidate)
-				if result == "success" then
-					print("[Trade] [+] Successfully added via fallback:", itemName, "| Identifier:", candidate)
-					added = true
-					break
-				elseif result == "error" then
-					uncertain = true
-					break
+		-- B. Try owned string StorageKeys
+		if not added and not uncertain then
+			for _, storageKey in ipairs(stringCandidates) do
+				local normalizedKey = storageKey:lower()
+				if ownedStorageKeys[normalizedKey] and not attempted[storageKey] then
+					attempted[storageKey] = true
+					local result = tryAddIdentifier(storageKey)
+					if result == "success" then
+						print("[Trade] [+] Successfully added:", itemName, "| StorageKey:", storageKey)
+						added = true
+						break
+					elseif result == "error" then
+						uncertain = true
+						break
+					end
 				end
-				task.wait(0.1)
 			end
 		end
-	end
 
-	-- D. Final status
-	if added then
-		print("[Trade] Finished adding:", itemName)
-	elseif uncertain then
-		warn("[Trade] Result uncertain for:", itemName, "| Stopped to prevent possible duplicate.")
-	else
-		warn("[Trade] Could not add item (not in inventory or table full):", itemName)
+		-- C. Fallback across all remaining candidates
+		if not added and not uncertain then
+			for _, candidate in ipairs(entry) do
+				if not attempted[candidate] then
+					attempted[candidate] = true
+					local result = tryAddIdentifier(candidate)
+					if result == "success" then
+						print("[Trade] [+] Successfully added via fallback:", itemName, "| Identifier:", candidate)
+						added = true
+						break
+					elseif result == "error" then
+						uncertain = true
+						break
+					end
+					task.wait(0.1)
+				end
+			end
+		end
+
+		-- D. Final status
+		if added then
+			print("[Trade] Finished adding:", itemName)
+		elseif uncertain then
+			warn("[Trade] Result uncertain for:", itemName, "| Stopped to prevent possible duplicate.")
+		else
+			warn("[Trade] Could not add item (not in inventory or table full):", itemName)
+		end
+	end)
+
+	if not ok then
+		warn("[Trade] Add error:", err)
 	end
 
 	isAdding = false
@@ -680,12 +743,21 @@ end
 -- =========================================================
 
 local function tryRemoveIdentifier(identifier)
+	local tf = TradeFunction or getTradeFunction()
+	if not tf then
+		warn("[Trade] TradeFunction remote missing!")
+		return "error"
+	end
+
 	local callOk, result = pcall(function()
-		return TradeFunction:InvokeServer(
+		return tf:InvokeServer(
 			"removeItem",
 			identifier
 		)
 	end)
+
+	print(string.format("[TradeDebug] removeItem(%s) -> ok=%s | type=%s | res=%s",
+		tostring(identifier), tostring(callOk), typeof(result), tostring(result)))
 
 	if not callOk then
 		warn(
@@ -708,6 +780,10 @@ local function removeItem(rawInput)
 		return
 	end
 
+	if not isSeatedAtTradeTable() then
+		warn("[Trade] Warning: LocalPlayer is not seated at a TradeTable right now.")
+	end
+
 	local entry, itemName, status = getRegistryEntry(rawInput)
 
 	if not entry then
@@ -717,43 +793,49 @@ local function removeItem(rawInput)
 
 	isRemoving = true
 
-	local removed = false
-	local uncertain = false
+	local ok, err = pcall(function()
+		local removed = false
+		local uncertain = false
 
-	for _, candidate in ipairs(entry) do
-		print("[Trade] Trying remove identifier:", candidate, itemName)
+		for _, candidate in ipairs(entry) do
+			print("[Trade] Trying remove identifier:", candidate, itemName)
 
-		local result = tryRemoveIdentifier(candidate)
+			local result = tryRemoveIdentifier(candidate)
 
-		if result == "success" then
-			print(
-				"[Trade] [-] Successfully removed:",
-				itemName,
-				"| Identifier:",
-				candidate
-			)
-			removed = true
-			break
-		elseif result == "error" then
-			uncertain = true
-			break
+			if result == "success" then
+				print(
+					"[Trade] [-] Successfully removed:",
+					itemName,
+					"| Identifier:",
+					candidate
+				)
+				removed = true
+				break
+			elseif result == "error" then
+				uncertain = true
+				break
+			end
+
+			task.wait(0.1)
 		end
 
-		task.wait(0.1)
-	end
+		if removed then
+			print("[Trade] Finished removing:", itemName)
+		elseif uncertain then
+			warn(
+				"[Trade] Remove result uncertain for:",
+				itemName
+			)
+		else
+			warn(
+				"[Trade] Could not remove item from trade table:",
+				itemName
+			)
+		end
+	end)
 
-	if removed then
-		print("[Trade] Finished removing:", itemName)
-	elseif uncertain then
-		warn(
-			"[Trade] Remove result uncertain for:",
-			itemName
-		)
-	else
-		warn(
-			"[Trade] Could not remove item from trade table:",
-			itemName
-		)
+	if not ok then
+		warn("[Trade] Remove error:", err)
 	end
 
 	isRemoving = false
@@ -764,26 +846,37 @@ end
 -- =========================================================
 
 local function InvokeTradeAction(action)
-	if not TradeFunction then
+	local tf = TradeFunction or getTradeFunction()
+	if not tf then
 		warn("[ERROR] TradeFunction remote missing!")
 		return
 	end
 
+	if not isSeatedAtTradeTable() then
+		warn("[Trade] Warning: LocalPlayer is not seated at a TradeTable right now.")
+	end
+
 	print("[DEBUG] Processing action via verified remote layout:", action)
 
-	pcall(function()
+	local callOk, result = pcall(function()
 		if action == "accept" or action == "!accept" then
 			local args = { "accept" }
-			TradeFunction:InvokeServer(unpack(args))
+			local res = tf:InvokeServer(tableUnpack(args))
 			print("[TRADE] !accept command executed")
+			return res
 		elseif action == "cancel" or action == "!cancel" then
 			local args = { "cancel" }
-			TradeFunction:InvokeServer(unpack(args))
+			local res = tf:InvokeServer(tableUnpack(args))
 			print("[TRADE] !cancel command executed")
+			return res
 		else
 			warn("[TRADE] Unknown command:", action)
+			return nil
 		end
 	end)
+
+	print(string.format("[TradeDebug] action(%s) -> ok=%s | type=%s | res=%s",
+		tostring(action), tostring(callOk), typeof(result), tostring(result)))
 end
 
 -- =========================================================
@@ -1053,8 +1146,10 @@ local function jumpOffTableAndStand()
 
 	if awayDir then
 		local standPos = originPos + (awayDir * 8) + Vector3.new(0, 2, 0)
-		hrp.AssemblyLinearVelocity = Vector3.zero
-		hrp.AssemblyAngularVelocity = Vector3.zero
+		pcall(function()
+			hrp.AssemblyLinearVelocity = Vector3.zero
+			hrp.AssemblyAngularVelocity = Vector3.zero
+		end)
 		character:PivotTo(CFrame.new(standPos, standPos + awayDir))
 		task.wait(0.25)
 	end
@@ -1217,7 +1312,6 @@ local function handleTradeCommand(rawText)
 		return
 	end
 
-	-- Duplicate message protection
 	local now = os.clock()
 
 	if lowerText == lastText
@@ -1272,51 +1366,51 @@ local function handleEquipCommand(rawText)
 	end
 end
 
--- Combined entry point used by the chat listeners
 local function handleChatCommand(rawText)
 	handleTradeCommand(rawText)
 	handleEquipCommand(rawText)
 end
 
 -- =========================================================
--- 10. CHAT LISTENERS
+-- 10. CHAT LISTENERS (ALL EXECUTORS)
 -- =========================================================
 
-if TextChatService
-	and TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
-
-	table.insert(
-		_G.TradeAddConnections,
-		TextChatService.MessageReceived:Connect(function(message)
-			if message.TextSource then
-				local sender = Players:GetPlayerByUserId(message.TextSource.UserId)
-				if sender and IsAuthorized(sender.Name) then
-					handleChatCommand(message.Text)
+pcall(function()
+	if TextChatService then
+		table.insert(
+			env.TradeAddConnections,
+			TextChatService.MessageReceived:Connect(function(message)
+				if message and message.TextSource then
+					local sender = Players:GetPlayerByUserId(message.TextSource.UserId)
+					if sender and IsAuthorized(sender.Name) then
+						handleChatCommand(message.Text)
+					end
 				end
-			end
-		end)
-	)
-else
-	for _, plr in ipairs(Players:GetPlayers()) do
+			end)
+		)
+	end
+end)
+
+for _, plr in ipairs(Players:GetPlayers()) do
+	if IsAuthorized(plr.Name) then
+		table.insert(
+			env.TradeAddConnections,
+			plr.Chatted:Connect(handleChatCommand)
+		)
+	end
+end
+
+table.insert(
+	env.TradeAddConnections,
+	Players.PlayerAdded:Connect(function(plr)
 		if IsAuthorized(plr.Name) then
 			table.insert(
-				_G.TradeAddConnections,
+				env.TradeAddConnections,
 				plr.Chatted:Connect(handleChatCommand)
 			)
 		end
-	end
-	table.insert(
-		_G.TradeAddConnections,
-		Players.PlayerAdded:Connect(function(plr)
-			if IsAuthorized(plr.Name) then
-				table.insert(
-					_G.TradeAddConnections,
-					plr.Chatted:Connect(handleChatCommand)
-				)
-			end
-		end)
-	)
-end
+	end)
+)
 
 -- =========================================================
 -- 11. AUTO-SIT LOOP
@@ -1337,15 +1431,15 @@ local function TweenToSeat(hrp, targetCFrame, sessionId)
 	end)
 
 	while not completed do
-		if _G.TradeAddSessionId ~= sessionId or isAutoSitBlocked() then
-			tween:Cancel()
-			conn:Disconnect()
+		if env.TradeAddSessionId ~= sessionId or isAutoSitBlocked() then
+			pcall(function() tween:Cancel() end)
+			pcall(function() conn:Disconnect() end)
 			return false
 		end
 		task.wait(0.05)
 	end
 
-	conn:Disconnect()
+	pcall(function() conn:Disconnect() end)
 	return true
 end
 
@@ -1362,7 +1456,7 @@ local function getTradeSeats()
 		return cachedTradeSeats
 	end
 	lastSeatScan = os.clock()
-	table.clear(cachedTradeSeats)
+	cachedTradeSeats = {}
 	for _, obj in ipairs(Workspace:GetDescendants()) do
 		if obj:IsA("Seat") and IsTradeTableSeat(obj) then
 			table.insert(cachedTradeSeats, obj)
@@ -1382,13 +1476,19 @@ local function GetUnauthorizedPlayerInSeat(seat)
 		return nil
 	end
 
-	local overlapParams = OverlapParams.new()
-	overlapParams.FilterType = Enum.RaycastFilterType.Exclude
-	if LocalPlayer.Character then
-		overlapParams.FilterDescendantsInstances = { LocalPlayer.Character }
+	local okOverlap, parts = pcall(function()
+		local overlapParams = OverlapParams.new()
+		overlapParams.FilterType = Enum.RaycastFilterType.Exclude
+		if LocalPlayer.Character then
+			overlapParams.FilterDescendantsInstances = { LocalPlayer.Character }
+		end
+		return Workspace:GetPartsInPart(seat, overlapParams)
+	end)
+
+	if not okOverlap or type(parts) ~= "table" then
+		return nil
 	end
 
-	local parts = Workspace:GetPartsInPart(seat, overlapParams)
 	local checkedPlayers = {}
 
 	for _, part in ipairs(parts) do
@@ -1426,9 +1526,9 @@ end
 task.spawn(function()
 	local jumpCooldown = 0
 
-	while _G.TradeAddSessionId == CURRENT_SESSION_ID do
+	while env.TradeAddSessionId == CURRENT_SESSION_ID do
 		task.wait(0.5)
-		if _G.TradeAddSessionId ~= CURRENT_SESSION_ID then break end
+		if env.TradeAddSessionId ~= CURRENT_SESSION_ID then break end
 		if isAutoSitBlocked() then continue end
 
 		local character = LocalPlayer.Character
@@ -1455,7 +1555,7 @@ task.spawn(function()
 
 				if unauthorizedFound then
 					task.wait(2)
-					if _G.TradeAddSessionId ~= CURRENT_SESSION_ID or isAutoSitBlocked() then continue end
+					if env.TradeAddSessionId ~= CURRENT_SESSION_ID or isAutoSitBlocked() then continue end
 					humanoid.Sit = false
 					humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
 					jumpCooldown = tick() + 2
@@ -1488,7 +1588,7 @@ task.spawn(function()
 				local tweenOk = TweenToSeat(hrp, targetCF, CURRENT_SESSION_ID)
 				if not tweenOk then continue end
 				task.wait(0.2)
-				if _G.TradeAddSessionId ~= CURRENT_SESSION_ID or isAutoSitBlocked() then continue end
+				if env.TradeAddSessionId ~= CURRENT_SESSION_ID or isAutoSitBlocked() then continue end
 				if bestSeat
 					and bestSeat.Parent
 					and bestSeat.Occupant == nil
