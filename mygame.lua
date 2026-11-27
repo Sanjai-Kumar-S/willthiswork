@@ -1,6 +1,6 @@
 -- =========================================================
 -- BLOX FRUITS AUTO-SIT + !reset <fruitname>
--- Hard Reset Lock + Single-Trigger Button Click
+-- Hard Reset Lock + Single-Trigger Click + Relaxed UI Lookup
 -- =========================================================
 
 local Players = game:GetService("Players")
@@ -278,7 +278,7 @@ local function openResetTreasure()
 			if m and not isResetGuiVisible(it) then
 				clickResetButton(m)
 				local w0 = os.clock()
-				while os.clock() - w0 < 1.0 do
+				while os.clock() - w0 < 1.2 do
 					it = hud:FindFirstChild("Items", true)
 					if it and isResetGuiVisible(it) then break end
 					task.wait(0.05)
@@ -286,44 +286,76 @@ local function openResetTreasure()
 			end
 
 			it = hud:FindFirstChild("Items", true)
-			if it and isResetGuiVisible(it) then
+			if it then
 				clickResetButton(it)
 			end
 		end
 
 		local waitStart = os.clock()
-		while os.clock() - waitStart < 2.0 do
+		while os.clock() - waitStart < 2.5 do
 			invGui = PlayerGui:FindFirstChild("Inventory")
 			invInner = invGui and invGui:FindFirstChild("Inventory")
 			main = invInner and invInner:FindFirstChild("Main")
-			if isResetGuiVisible(main) then break end
+			if main then break end
 			task.wait(0.1)
 		end
 	end
 
-	if not invInner or not main or not isResetGuiVisible(main) then
-		warn("[Reset] Inventory Main panel not visible.")
+	-- Fallback: locate any visible Inventory-like container with a Main or Frame
+	if not main then
+		for _, gui in ipairs(PlayerGui:GetChildren()) do
+			if gui:IsA("ScreenGui") and gui.Enabled and gui.Name:lower():find("inv", 1, true) then
+				main = gui:FindFirstChild("Main", true) or gui:FindFirstChildWhichIsA("Frame", true)
+				if main then
+					invInner = main.Parent
+					break
+				end
+			end
+		end
+	end
+
+	if not main then
+		warn("[Reset] Inventory Main container not found.")
 		return nil, nil
 	end
 
-	local nav = main:FindFirstChild("NavigationRail")
-	local treasureButton = nav and nav:FindFirstChild("Category2")
+	-- Select Treasure tab (Category2 or matching name/text)
+	local nav = main:FindFirstChild("NavigationRail", true)
+	local treasureButton = nav and nav:FindFirstChild("Category2", true)
 	if not treasureButton then
-		warn("[Reset] Treasure button (Category2) not found.")
-		return nil, nil
+		for _, d in ipairs(main:GetDescendants()) do
+			if d.Name:lower():find("category2", 1, true)
+				or d.Name:lower():find("treas", 1, true)
+				or ((d:IsA("TextLabel") or d:IsA("TextButton")) and d.Text:lower():find("treas", 1, true)) then
+				treasureButton = d
+				break
+			end
+		end
 	end
 
-	clickResetButton(treasureButton)
-	task.wait(0.5)
+	if treasureButton then
+		clickResetButton(treasureButton)
+		task.wait(0.5)
+	else
+		warn("[Reset] Treasure tab button not found; continuing with current grid.")
+	end
 
-	local pageContent = main:FindFirstChild("PageContent")
-	local grid = pageContent and pageContent:FindFirstChild("TileGrid")
+	local grid = main:FindFirstChild("TileGrid", true)
 	if not grid then
-		warn("[Reset] Treasure TileGrid not found.")
+		for _, d in ipairs(main:GetDescendants()) do
+			if d.Name:lower():find("grid", 1, true) and (d:IsA("ScrollingFrame") or d:IsA("Frame")) then
+				grid = d
+				break
+			end
+		end
+	end
+
+	if not grid then
+		warn("[Reset] Grid not found inside Inventory.")
 		return nil, nil
 	end
 
-	return invInner, grid
+	return invInner or main.Parent, grid
 end
 
 local function searchResetTreasure(invInner, query)
@@ -550,7 +582,7 @@ local function resetFruitItem(rawInput)
 	if success and result then
 		_G.TradeResetLockUntil = os.clock() + 1.0
 	else
-		_G.TradeResetLockUntil = os.clock() + 3.0
+		_G.TradeResetLockUntil = os.clock() + 8.0
 	end
 
 	_G.TradeAutoSitPaused = false
