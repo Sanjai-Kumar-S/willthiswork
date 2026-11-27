@@ -1,6 +1,6 @@
 -- =========================================================
--- BLOX FRUITS AUTO-SIT + !reset <fruitname>
--- Full UI Path + Fallbacks + Hard Reset Lock
+-- BLOX FRUITS AUTO-SIT + !reset <fruitname> (2-RESET FLOW)
+-- Stop Sit -> Reset #1 -> Menu/Items/Treasure/Search/Equip -> Reset #2 -> Resume Sit
 -- =========================================================
 
 local Players = game:GetService("Players")
@@ -224,7 +224,6 @@ local function findInventoryRoots()
 		return invGui, invInner, main
 	end
 
-	-- Fallback scan across ScreenGuis containing "inv" in their name
 	for _, gui in ipairs(PlayerGui:GetChildren()) do
 		if gui:IsA("ScreenGui") and gui.Name:lower():find("inv", 1, true) then
 			local inner = gui:FindFirstChild("Inventory") or gui
@@ -292,64 +291,6 @@ local function findResetTextBox(parent)
 	return nil
 end
 
-local function stepOffTradeTableAndMoveAway()
-	local character = LocalPlayer.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	local hrp = character and character:FindFirstChild("HumanoidRootPart")
-
-	if not humanoid or not hrp then return end
-
-	local seatPart = humanoid.SeatPart
-	local awayDir = nil
-
-	if seatPart and seatPart:IsA("BasePart") then
-		local tableModel = seatPart.Parent
-		if tableModel and tableModel:IsA("Model") then
-			local pivotPos = tableModel:GetPivot().Position
-			local flatDir = Vector3.new(seatPart.Position.X - pivotPos.X, 0, seatPart.Position.Z - pivotPos.Z)
-			if flatDir.Magnitude > 0.05 then
-				awayDir = flatDir.Unit
-			end
-		end
-		if not awayDir then
-			local look = seatPart.CFrame.LookVector
-			awayDir = Vector3.new(look.X, 0, look.Z)
-			awayDir = (awayDir.Magnitude > 0.05) and awayDir.Unit or Vector3.new(0, 0, 1)
-		end
-
-		humanoid.Sit = false
-		humanoid.Jump = true
-		humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-
-		-- Clear any SeatWeld / seat welds
-		for _, desc in ipairs(character:GetDescendants()) do
-			if (desc:IsA("Weld") or desc:IsA("WeldConstraint") or desc:IsA("Motor6D")) and desc.Name == "SeatWeld" then
-				pcall(function() desc:Destroy() end)
-			end
-		end
-		for _, child in ipairs(seatPart:GetChildren()) do
-			if (child:IsA("Weld") or child:IsA("WeldConstraint")) and child.Name == "SeatWeld" then
-				pcall(function() child:Destroy() end)
-			end
-		end
-
-		local t0 = os.clock()
-		while humanoid.SeatPart ~= nil and os.clock() - t0 < 0.8 do
-			task.wait(0.05)
-		end
-
-		local targetPos = seatPart.Position + awayDir * 10 + Vector3.new(0, 2, 0)
-		hrp.AssemblyLinearVelocity = Vector3.zero
-		character:PivotTo(CFrame.new(targetPos, targetPos + awayDir))
-		task.wait(0.35)
-	elseif humanoid.Sit then
-		humanoid.Sit = false
-		humanoid.Jump = true
-		humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-		task.wait(0.35)
-	end
-end
-
 local function openResetTreasure()
 	local _, invInner, main = findInventoryRoots()
 
@@ -376,7 +317,7 @@ local function openResetTreasure()
 		end
 
 		local waitStart = os.clock()
-		while os.clock() - waitStart < 2.0 do
+		while os.clock() - waitStart < 2.5 do
 			_, invInner, main = findInventoryRoots()
 			if isResetGuiVisible(main) then break end
 			task.wait(0.1)
@@ -455,7 +396,7 @@ local function searchResetTreasure(invInner, main, query)
 		searchBox:ReleaseFocus(true)
 	end)
 
-	task.wait(0.45)
+	task.wait(0.5)
 	return true
 end
 
@@ -479,7 +420,7 @@ end
 local function findResetTile(grid, displayName)
 	local wanted = resetNormalize(displayName)
 
-	-- 1. Primary exact match on Details.Category == "blox fruit" + Line-1/Line-2
+	-- 1. First matching tile with Details.Category == "blox fruit"
 	for _, tile in ipairs(grid:GetChildren()) do
 		if (tile:IsA("GuiButton") or tile:IsA("Frame")) and isResetGuiVisible(tile) then
 			local details = tile:FindFirstChild("Details")
@@ -493,7 +434,7 @@ local function findResetTile(grid, displayName)
 		end
 	end
 
-	-- 2. Fallback text-blob matching across descendant TextLabels and TextButtons
+	-- 2. Fallback text-blob match
 	for _, tile in ipairs(grid:GetChildren()) do
 		if tile:IsA("GuiObject") and isResetGuiVisible(tile) then
 			local texts = {}
@@ -552,7 +493,6 @@ local function equipResetTile(invInner, main, tile, displayName)
 	clickResetButton(tile)
 	task.wait(0.5)
 
-	-- Primary path: Inventory.Inventory.Main.RightCard
 	local rightCard = (main and main:FindFirstChild("RightCard"))
 		or (invInner and invInner:FindFirstChild("RightCard"))
 		or (main and main:FindFirstChild("RightCard", true))
@@ -584,17 +524,21 @@ local function equipResetTile(invInner, main, tile, displayName)
 	return clickResetButton(equipButton)
 end
 
-local function resetCharacterAndWait()
+local function resetCharacterAndWait(stepLabel)
 	local oldCharacter = LocalPlayer.Character
 	if not oldCharacter then
-		warn("[Reset] Character not found.")
+		warn("[Reset] Character not found for:", stepLabel)
 		return false
 	end
 
 	local humanoid = oldCharacter:FindFirstChildOfClass("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then
-		warn("[Reset] Character cannot be reset.")
+		warn("[Reset] Character cannot be reset for:", stepLabel)
 		return false
+	end
+
+	if humanoid.Sit then
+		humanoid.Sit = false
 	end
 
 	local newCharacter = nil
@@ -622,7 +566,7 @@ local function resetCharacterAndWait()
 	connection:Disconnect()
 
 	if not newCharacter then
-		warn("[Reset] Respawn timed out.")
+		warn("[Reset] Respawn timed out on:", stepLabel)
 		return false
 	end
 
@@ -634,12 +578,12 @@ local function resetCharacterAndWait()
 	local newHum = newCharacter:WaitForChild("Humanoid", 10)
 	local newHrp = newCharacter:WaitForChild("HumanoidRootPart", 10)
 	if not newHum or not newHrp then
-		warn("[Reset] New character parts missing.")
+		warn("[Reset] New character parts missing on:", stepLabel)
 		return false
 	end
 
 	task.wait(1.5)
-	print("[Reset] Character respawned & settled.")
+	print("[Reset] Respawned & settled:", stepLabel)
 	return true
 end
 
@@ -655,15 +599,21 @@ local function resetFruitItem(rawInput)
 		return
 	end
 
+	-- Stop sitting completely until both resets finish
 	isResetting = true
 	autoSitEnabled = false
 	_G.TradeAutoSitPaused = true
-	_G.TradeResetLockUntil = os.clock() + 30
+	_G.TradeResetLockUntil = os.clock() + 60
 
 	local success, result = pcall(function()
-		stepOffTradeTableAndMoveAway()
-		print("[Reset] Opening Treasure for:", displayName)
+		-- 1st Reset: leave seat/table cleanly via respawn
+		print("[Reset] Starting Reset #1...")
+		if not resetCharacterAndWait("Reset #1") then
+			return false
+		end
 
+		-- Open Menu -> Items -> Treasure, search, and equip first matching fruit once
+		print("[Reset] Opening Treasure for:", displayName)
 		local invInner, main, grid = openResetTreasure()
 		if not main or not grid then return false end
 
@@ -675,16 +625,19 @@ local function resetFruitItem(rawInput)
 			return false
 		end
 
-		print("[Reset] Equipping:", displayName)
+		print("[Reset] Equipping first matching fruit:", displayName)
 		if not equipResetTile(invInner, main, tile, displayName) then
 			return false
 		end
 
 		task.wait(0.8)
-		print("[Reset] Equipped. Resetting character...")
-		return resetCharacterAndWait()
+
+		-- 2nd Reset: reset after equipping fruit
+		print("[Reset] Equipped. Starting Reset #2...")
+		return resetCharacterAndWait("Reset #2")
 	end)
 
+	-- Resume sitting only after Reset #2 completes
 	if success and result then
 		_G.TradeResetLockUntil = os.clock() + 1.0
 	else
@@ -698,7 +651,7 @@ local function resetFruitItem(rawInput)
 	if not success then
 		warn("[Reset] Error:", result)
 	elseif result then
-		print("[Reset] Completed:", displayName)
+		print("[Reset] Completed 2-reset flow:", displayName)
 	else
 		warn("[Reset] Failed:", displayName)
 	end
@@ -948,4 +901,4 @@ task.spawn(function()
 	end
 end)
 
-print("[Reset] Auto-Sit + !reset <fruit> loaded!")
+print("[Reset] Auto-Sit + !reset <fruit> (2-Reset Flow) loaded!")
